@@ -65,7 +65,7 @@ async def main():
     dp.include_router(channels.router)
     dp.include_router(stats.router)
     
-    tw_monitor = TwitterMonitor(translator=translator, bot=bot, interval=180)
+    tw_monitor = TwitterMonitor(translator=translator, bot=bot, interval=600)
     
     logger.info("Bot starting with Telethon support...")
     logger.info(">>> BOT STARTING - VERSION 2.5 FINAL - ALL FIXES APPLIED <<<")
