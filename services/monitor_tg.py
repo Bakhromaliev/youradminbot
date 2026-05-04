@@ -89,6 +89,7 @@ class TelegramMonitor:
 
                 # Matnni tozalash (Username va Linklarni o'chirish)
                 clean_text = re.sub(r'https?://\S+', '', text) # Barcha http linklar
+                clean_text = re.sub(r't\.me/\S+', '', clean_text) # t.me linklar
                 clean_text = re.sub(r'@\w+', '', clean_text)    # Barcha @username lar
                 clean_text = clean_text.strip()
 
@@ -132,6 +133,7 @@ class TelegramMonitor:
 
             # Matnni tozalash (Username va Linklarni o'chirish)
             clean_text = re.sub(r'https?://\S+', '', text) # Barcha http linklar
+            clean_text = re.sub(r't\.me/\S+', '', clean_text) # t.me linklar
             clean_text = re.sub(r'@\w+', '', clean_text)    # Barcha @username lar
             clean_text = clean_text.strip()
 

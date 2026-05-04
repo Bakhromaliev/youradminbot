@@ -42,8 +42,11 @@ class TranslatorService:
                         f"1. STYLE: Native, professional football terminology. \n"
                         f"2. CYRILLIC RULES: If Cyrillic, ensure 'E' at start of words is 'Э'. \n"
                         f"3. FORMAT: Keep all spacing and empty lines exactly as they are. \n"
-                        f"4. REMOVAL: Remove any signatures, external links, advertisements, and social media handles. \n"
-                        f"5. Direct Output: Return ONLY the final translated text. \n\n"
+                        f"4. CLEANING (URGENT): You MUST REMOVE any source signatures, advertising slogans, and calls to action. \n"
+                        f"   - REMOVE sentences like: 'Everything about Real Madrid in our channel', 'Join us', 'Subscribe'. \n"
+                        f"   - REMOVE all Telegram links (e.g., t.me/...) and social media handles (@...). \n"
+                        f"   - DO NOT translate advertisements. Just delete them from the text. \n"
+                        f"5. Direct Output: Return ONLY the final translated news text. \n\n"
                         f"TEXT TO TRANSLATE:\n{text}"
                     )
                     
