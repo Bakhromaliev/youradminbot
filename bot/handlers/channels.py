@@ -144,7 +144,8 @@ async def add_channel_start(message: types.Message, state: FSMContext):
 async def process_channel_id(message: types.Message, state: FSMContext, bot: Bot):
     lang = await get_user_lang(message.from_user.id)
     raw_input = message.text.strip()
-    if any(x in raw_input for x in ["Bekor qilish", "Отмена", "Cancel"]): await list_channels(message, state); return
+    if any(raw_input == get_text(k, lang) for k in ['btn_cancel', 'btn_back', 'btn_main_menu']): 
+        await list_channels(message, state); return
     channel_id = raw_input
     if "t.me/" in raw_input: channel_id = "@" + raw_input.split("t.me/")[-1].split("/")[0]
     try:
@@ -233,6 +234,11 @@ async def back_to_channels(message: types.Message, state: FSMContext): await lis
 
 @router.message(lambda m: m.text in [get_text('btn_main_menu', 'uz'), get_text('btn_main_menu', 'ru'), get_text('btn_main_menu', 'en')])
 async def go_main(message: types.Message, state: FSMContext):
+    from bot.utils.keyboards import get_main_menu_keyboard
     lang = await get_user_lang(message.from_user.id)
     await state.clear()
-    await message.answer(get_text('welcome_msg', lang), reply_markup=get_main_menu_keyboard(lang), parse_mode="HTML")
+    await message.answer(
+        get_text('welcome_msg', lang), 
+        reply_markup=get_main_menu_keyboard(lang, user_id=message.from_user.id), 
+        parse_mode="HTML"
+    )

@@ -2,7 +2,15 @@ from aiogram import types
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from bot.utils.texts import get_text
 
-def get_main_menu_keyboard(lang='uz', is_vip=False, is_admin=False):
+import os
+
+def get_main_menu_keyboard(lang='uz', is_vip=False, is_admin=False, user_id=None):
+    if user_id:
+        SUPER_ADMIN_ID = int(os.getenv("ADMIN_ID", "1400240097"))
+        if user_id == SUPER_ADMIN_ID:
+            is_admin = True
+            is_vip = True
+            
     builder = ReplyKeyboardBuilder()
     builder.row(types.KeyboardButton(text=get_text('btn_sources', lang)))
     builder.row(types.KeyboardButton(text=get_text('btn_my_channels', lang)))

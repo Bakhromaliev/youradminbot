@@ -1,5 +1,6 @@
 import logging
 from aiogram import Router, types, F
+import os
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -28,10 +29,14 @@ async def get_user_lang(user_id: int):
 async def list_sources_msg(message: types.Message, state: FSMContext, override_text=None):
     # Har qanday "Orqaga" yoki "Bekor qilish" bosilganda shu yerga keladi
     await state.clear()
-    lang = await get_user_lang(message.from_user.id)
     async with AsyncSessionLocal() as session:
         user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
         user = user_res.scalar_one()
+        lang = user.bot_language
+        
+        # Adminlikni tekshiramiz (klaviatura uchun kerak bo'ladi)
+        SUPER_ADMIN_ID = int(os.getenv("ADMIN_ID", "1400240097"))
+        is_admin = (user.telegram_id == SUPER_ADMIN_ID) or user.is_admin
         sources_res = await session.execute(select(Source).where(Source.user_id == user.id))
         sources = sources_res.scalars().all()
 
@@ -180,9 +185,13 @@ async def del_src_final(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.delete()
     await list_sources_msg(callback.message, state, override_text="✅ Manba o'chirildi.")
 
-@router.message(F.text.contains("Asosiy menyu") | F.text.contains("Главное меню") | F.text.contains("Main Menu"))
+@router.message(lambda m: m.text in [get_text('btn_main_menu', 'uz'), get_text('btn_main_menu', 'ru'), get_text('btn_main_menu', 'en')])
 async def go_main(message: types.Message, state: FSMContext):
-    from .start import get_main_menu_keyboard
-    lang = await get_user_lang(message.from_user.id)
+    from bot.utils.keyboards import get_main_menu_keyboard
     await state.clear()
-    await message.answer(get_text('welcome_msg', lang), reply_markup=get_main_menu_keyboard(lang), parse_mode="HTML")
+    lang = await get_user_lang(message.from_user.id)
+    await message.answer(
+        get_text('welcome_msg', lang), 
+        reply_markup=get_main_menu_keyboard(lang, user_id=message.from_user.id), 
+        parse_mode="HTML"
+    )
