@@ -73,23 +73,22 @@ class TwitterMonitor:
                 tweets = data.get('timeline', []) if isinstance(data, dict) else data
                 if not isinstance(tweets, list): return
 
-                # Birinchi marta bo'lsa, faqat ID-larni saqlaymiz (eski postlar kelmasligi uchun)
-                if username not in self.initialized_sources:
-                    for t in tweets:
-                        tid = str(t.get('tweet_id') or t.get('id_str') or t.get('id'))
-                        if tid: self.processed_tweets.add(tid)
-                    self.initialized_sources.add(username)
-                    return
-
                 # Eng so'nggi 3 ta tweetni tekshiramiz
-                for tweet in tweets[:3]:
-                    if tweet.get('retweeted') or 'retweeted_status' in tweet: continue
-                    
-                    tweet_id = str(tweet.get('tweet_id') or tweet.get('id_str') or tweet.get('id'))
-                    if not tweet_id or tweet_id in self.processed_tweets:
-                        continue
-                    
-                    self.processed_tweets.add(tweet_id)
+                async with AsyncSessionLocal() as session:
+                    for tweet in tweets[:3]:
+                        if tweet.get('retweeted') or 'retweeted_status' in tweet: continue
+                        
+                        tweet_id = str(tweet.get('tweet_id') or tweet.get('id_str') or tweet.get('id'))
+                        if not tweet_id: continue
+                        
+                        # Dublikatni tekshirish (Bazadan qidiramiz)
+                        existing = await session.execute(
+                            select(PendingPost).where(PendingPost.source_type == "twitter", PendingPost.original_text.contains(tweet_id))
+                        )
+                        if existing.scalar_one_or_none(): continue
+                        
+                        raw_text = tweet.get('text') or tweet.get('full_text') or ""
+                        if not raw_text: continue
                     
                     raw_text = tweet.get('text') or tweet.get('full_text') or ""
                     media_url = self.find_media_recursive(tweet)
@@ -154,11 +153,13 @@ class TwitterMonitor:
                     spacing = "\n" * (channel.signature_spacing + 1)
                     final_text += spacing + sig
 
+                # DB ga saqlash (tweet_id bilan birga)
+                db_text = f"{text}\n\n#tw_id:{tweet_id}"
                 new_pending = PendingPost(
                     user_id=user.id, 
                     link_id=link.id, 
                     source_type="twitter", 
-                    original_text=text, 
+                    original_text=db_text, 
                     translated_text=translated, 
                     media_url=media_url
                 )
