@@ -174,7 +174,7 @@ class TelegramMonitor:
             display_text += ("\n" * (channel.signature_spacing + 1)) + sig
 
         caption = (
-            f"🆕 <b>Yangi post! (Telegram)</b>\n\n"
+            f"🆕 <b>SHERIK: Yangi post! (Telegram)</b>\n\n"
             f"📝 Tarjima (nusxalash uchun ustiga bosing):\n<code>{display_text}</code>"
         )
 

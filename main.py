@@ -59,7 +59,9 @@ async def main():
     tw_monitor = TwitterMonitor(translator=translator, bot=bot, interval=180)
     
     logger.info("Bot starting with Telethon support...")
-    logger.info(">>> TRANSLATOR BOT V2.0 (CLEANING & EDIT FIX) STARTED <<<")
+    logger.info(">>> BOT STARTING - VERSION 2.5 FINAL - ALL FIXES APPLIED <<<")
+    logger.info(">>> BOT STARTING - VERSION 2.5 FINAL - ALL FIXES APPLIED <<<")
+    logger.info(">>> BOT STARTING - VERSION 2.5 FINAL - ALL FIXES APPLIED <<<")
     
     # Monitorlarni fonda ishga tushirish
     asyncio.create_task(tg_monitor.start())
