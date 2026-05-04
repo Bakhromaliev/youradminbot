@@ -68,8 +68,10 @@ class TranslatorService:
                         logger.warning(f"Empty response from {m_name}. Safety reason: {response.prompt_feedback if hasattr(response, 'prompt_feedback') else 'Unknown'}")
                     
                 except Exception as e:
-                    logger.error(f"Model {m_name} critical error: {e}")
-                    continue
+                    err_msg = f"❌ Model {m_name} error: {e}"
+                    logger.error(err_msg)
+                    # Adminga xatolikni ko'rsatish uchun (vaqtinchalik debugging)
+                    return f"DEBUG ERROR: {err_msg}\n\nORIGINAL TEXT:\n{text}"
 
         return text
 
