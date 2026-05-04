@@ -171,7 +171,8 @@ class TelegramMonitor:
                     return
                 
                 logger.info(f"Found {len(links)} matching links for this message.")
-                text = message.message or ""
+                text = message.message or message.text or ""
+                logger.info(f"Message text length: {len(text)} chars")
                 
                 # --- PREMIUM EMOJILARNI SAQLASH ---
                 from telethon.tl.types import MessageEntityCustomEmoji
@@ -220,7 +221,14 @@ class TelegramMonitor:
                             continue
                     # -------------------------
 
-                    translated = await self.translator.translate(clean_text, target_lang=channel.target_lang, target_alphabet=channel.alphabet)
+                    try:
+                        translated = await asyncio.wait_for(
+                            self.translator.translate(clean_text, target_lang=channel.target_lang, target_alphabet=channel.alphabet),
+                            timeout=45.0
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning(f"Translation timed out for long post ({len(clean_text)} chars). Using original.")
+                        translated = clean_text
                     translated = _decode_premium_emojis(translated)
                     
                     new_pending = PendingPost(user_id=user.id, link_id=link.id, source_type="telegram", original_text=text, translated_text=translated)

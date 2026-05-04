@@ -53,16 +53,17 @@ class TranslatorService:
             try:
                 model = genai.GenerativeModel(m_name)
                 prompt = (
-                    f"Sen futbolni yaxshi ko'radigan, o'zbek tilida yozadigan faol sport blogerisan. "
-                    f"Quyidagi xabarni {target_name} tilida ({alphabet_name}) yoz — lekin rasmiy yoki kitobiy emas, "
-                    f"oddiy, jonli, ko'cha tilida. Xuddi do'stingga futbol yangiligini aytayotgandek. "
-                    f"Emoji va energiya bo'lsin, lekin ortiqcha emas.\n\n"
+                    f"Siz O'zbek tilida yozadigan tajribali sport muxbirisiz.\n"
+                    f"Quyidagi xabarni {target_name} tiliga tarjima qiling.\n\n"
+                    f"MAJBURIY ALIFBO: Faqat {alphabet_name} ishlating. "
+                    f"Hech qanday aralash yozuv bo'lmasin — yo to'liq lotin, yo to'liq kirill.\n\n"
                     f"QOIDALAR:\n"
-                    f"1. Ko'cha tili: 'qayd etdi' o'rniga 'qo'ydi', 'amalga oshirdi' o'rniga 'qildi' de. Tabiiy gapir.\n"
-                    f"2. [[emoji_id:...]] kodlarini O'ZGARTIRMA, o'z joyida qoldir.\n"
-                    f"3. Linklar, @username va reklamalarni O'CHIR.\n"
-                    f"4. Faqat tayyor matnni qaytargin, hech qanday izoh yozma.\n\n"
-                    f"XABAR:\n{text}"
+                    f"1. Tarjimani tushunarli, ravon va ma'noli qiling. Na juda rasmiy, na jargon.\n"
+                    f"2. Futbol atamalarini to'g'ri ishlating.\n"
+                    f"3. [[emoji_id:...]] formatidagi kodlarni o'zgartirmang.\n"
+                    f"4. Linklar, @username va reklamalarni o'chiring.\n"
+                    f"5. Faqat tayyor tarjima matnini qaytaring.\n\n"
+                    f"MATN:\n{text}"
                 )
                 response = model.generate_content(prompt, safety_settings=safety_settings)
                 if response and hasattr(response, 'text') and response.text:
