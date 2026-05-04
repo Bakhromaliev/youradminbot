@@ -87,10 +87,12 @@ class TelegramMonitor:
                 ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
                 channel = ch_res.scalar_one()
 
-                # Matnni tozalash (Username va Linklarni o'chirish)
-                clean_text = re.sub(r'https?://\S+', '', text) # Barcha http linklar
-                clean_text = re.sub(r't\.me/\S+', '', clean_text) # t.me linklar
-                clean_text = re.sub(r'@\w+', '', clean_text)    # Barcha @username lar
+                # Agressiv tozalash (Barcha turdagi linklar va username'lar)
+                clean_text = re.sub(r'https?://\S+', '', text)
+                clean_text = re.sub(r't\.me/\S+', '', clean_text)
+                clean_text = re.sub(r'tg://\S+', '', clean_text)
+                clean_text = re.sub(r'www\.\S+', '', clean_text)
+                clean_text = re.sub(r'@\w+', '', clean_text)
                 clean_text = clean_text.strip()
 
                 if not translated_text:
@@ -131,10 +133,12 @@ class TelegramMonitor:
                 file_path = await message.download_media(file=f"{self.download_path}/")
                 m_type = 'photo' if hasattr(message.media, 'photo') else 'video'
 
-            # Matnni tozalash (Username va Linklarni o'chirish)
-            clean_text = re.sub(r'https?://\S+', '', text) # Barcha http linklar
-            clean_text = re.sub(r't\.me/\S+', '', clean_text) # t.me linklar
-            clean_text = re.sub(r'@\w+', '', clean_text)    # Barcha @username lar
+            # Agressiv tozalash (Barcha turdagi linklar va username'lar)
+            clean_text = re.sub(r'https?://\S+', '', text)
+            clean_text = re.sub(r't\.me/\S+', '', clean_text)
+            clean_text = re.sub(r'tg://\S+', '', clean_text)
+            clean_text = re.sub(r'www\.\S+', '', clean_text)
+            clean_text = re.sub(r'@\w+', '', clean_text)
             clean_text = clean_text.strip()
 
             for link in links:
