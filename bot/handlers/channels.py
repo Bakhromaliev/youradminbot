@@ -133,7 +133,6 @@ async def list_channels(message: types.Message, state: FSMContext):
     builder.row(types.KeyboardButton(text=get_text('btn_add_channel', lang)), types.KeyboardButton(text=get_text('btn_main_menu', lang)))
     await state.set_state(ChannelStates.viewing_channels)
     await message.answer("📢 <b>Sizning kanallaringiz</b>", reply_markup=builder.as_markup(resize_keyboard=True), parse_mode="HTML")
-Line 136: 
 
 @router.message(lambda m: m.text in [get_text('btn_add_channel', 'uz'), get_text('btn_add_channel', 'ru'), get_text('btn_add_channel', 'en')])
 async def add_channel_start(message: types.Message, state: FSMContext):
