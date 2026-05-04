@@ -46,9 +46,9 @@ async def main():
     dp["tg_monitor"] = tg_monitor
     
     # Handlerlarni ro'yxatdan o'tkazish
+    dp.include_router(vip.router) # VIP birinchi
     dp.include_router(admin_sys.router)
     dp.include_router(admin_settings.router)
-    dp.include_router(vip.router)
     dp.include_router(start.router)
     dp.include_router(sources.router)
     dp.include_router(approval.router)

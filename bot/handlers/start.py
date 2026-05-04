@@ -23,17 +23,21 @@ async def cmd_start(message: types.Message, state: FSMContext):
         result = await session.execute(select(User).where(User.telegram_id == user_id))
         user = result.scalar_one_or_none()
 
+        # Qat'iy adminlik tekshiruvi
         is_admin = (user_id == SUPER_ADMIN_ID) or (user and user.is_admin)
         is_vip = (user_id == SUPER_ADMIN_ID) or (user and user.is_vip)
 
+        welcome_text = get_text('welcome_msg', user.bot_language if user else 'uz')
+        welcome_text += f"\n\n🆔 Sizning ID: <code>{user_id}</code>" # ID'ni ko'rsatamiz
+
         if user:
-            # Bazadagi adminlikni ham yangilab qo'yamiz (agar super admin bo'lsa)
+            # Agar super admin bo'lsa, bazada ham admin qilib qo'yamiz
             if user_id == SUPER_ADMIN_ID and not user.is_admin:
                 user.is_admin = True
                 await session.commit()
 
             await message.answer(
-                get_text('welcome_msg', user.bot_language),
+                welcome_text,
                 reply_markup=get_main_menu_keyboard(user.bot_language, is_vip=is_vip, is_admin=is_admin), 
                 parse_mode="HTML"
             )
