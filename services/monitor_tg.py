@@ -15,8 +15,11 @@ from bot.utils.texts import get_text
 logger = logging.getLogger(__name__)
 
 class TelegramMonitor:
-    def __init__(self, api_id, api_hash, bot_token, translator: TranslatorService, aiogram_bot: Bot):
-        self.client = Client("user_session", api_id=api_id, api_hash=api_hash)
+    def __init__(self, api_id, api_hash, bot_token, translator: TranslatorService, aiogram_bot: Bot, session_string: str = None):
+        if session_string:
+            self.client = Client("user_session", api_id=api_id, api_hash=api_hash, session_string=session_string)
+        else:
+            self.client = Client("user_session", api_id=api_id, api_hash=api_hash)
         self.bot_token = bot_token
         self.translator = translator
         self.bot = aiogram_bot
