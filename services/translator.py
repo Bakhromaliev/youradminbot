@@ -66,7 +66,15 @@ class TranslatorService:
                 )
                 response = model.generate_content(prompt, safety_settings=safety_settings)
                 if response and hasattr(response, 'text') and response.text:
-                    return response.text.strip()
+                    result = response.text.strip()
+                    # Kirill majburiy tekshiruvi: agar kirill kerak bo'lsa va AI lotin qaytargan bo'lsa
+                    if target_alphabet == 'cyrillic':
+                        latin_count = len(re.findall(r'[a-zA-Z]', result))
+                        cyrillic_count = len(re.findall(r'[а-яА-ЯёЁ]', result))
+                        if latin_count > cyrillic_count:
+                            logger.warning(f"AI returned Latin for Cyrillic request. Force-converting...")
+                            result = self.to_cyrillic(result)
+                    return result
             except Exception as e:
                 logger.warning(f"Gemini {m_name} failed: {e}")
                 continue
@@ -81,14 +89,6 @@ class TranslatorService:
 
     def to_cyrillic(self, text: str) -> str:
         res = text
-        # Word-initial 'E' fix
-        words = res.split()
-        fixed_words = []
-        for w in words:
-            if w.lower().startswith('e'):
-                # Bu yerda oddiy almashtirish biroz qiyin, shuning uchun bazaviy o'girishdan foydalanamiz
-                pass
-        
         for k, v in LATIN_TO_CYRILLIC.items():
             res = res.replace(k, v)
         return res

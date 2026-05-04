@@ -41,16 +41,27 @@ class TelegramMonitor:
         # Yangi xabarlarni tutish
         @self.client.on(events.NewMessage)
         async def handle_new_post(event):
-            if event.grouped_id:
-                gid = event.grouped_id
-                if gid not in self.media_groups:
-                    self.media_groups[gid] = []
-                    asyncio.create_task(self.process_media_group_after_delay(gid))
-                self.media_groups[gid].append(event.message)
-                return
-            await self.process_single_message(event.message)
+            try:
+                if event.grouped_id:
+                    gid = event.grouped_id
+                    if gid not in self.media_groups:
+                        self.media_groups[gid] = []
+                        asyncio.create_task(self.process_media_group_after_delay(gid))
+                    self.media_groups[gid].append(event.message)
+                    return
+                # MUHIM: create_task orqali chiqaramiz — bot event loop ni bloklab qolmasin!
+                asyncio.create_task(self.safe_process_message(event.message))
+            except Exception as e:
+                logger.error(f"handle_new_post error: {e}")
 
         logger.info("Telegram Monitor (Telethon) started successfully.")
+
+    async def safe_process_message(self, message):
+        """Xatolarni ushlab, process_single_message ni xavfsiz ishga tushiruvchi wrapper."""
+        try:
+            await self.process_single_message(message)
+        except Exception as e:
+            logger.error(f"safe_process_message error: {e}", exc_info=True)
 
     async def join_source(self, source_id: str):
         if not source_id: return False
@@ -120,11 +131,18 @@ class TelegramMonitor:
                 await self.send_preview(user.telegram_id, new_pending, channel, media_list)
 
     async def process_single_message(self, message):
-        chat = await message.get_chat()
-        variants = [str(chat.id)]
-        if hasattr(chat, 'username') and chat.username:
-            variants.extend([chat.username, f"@{chat.username}"])
-        
+        try:
+            chat = await message.get_chat()
+            chat_id_num = getattr(chat, 'id', None)
+            variants = []
+            if chat_id_num:
+                variants.append(str(chat_id_num))
+                # Telegram kanal IDlari -100 prefiksi bilan ham saqlanadi
+                variants.append(f"-100{str(chat_id_num).lstrip('-')}") 
+            if hasattr(chat, 'username') and chat.username:
+                variants.extend([chat.username, f"@{chat.username}"])
+            
+            logger.info(f"New TG message. Chat variants: {variants}")
         async with AsyncSessionLocal() as session:
             stmt = select(SourceChannelLink).where(SourceChannelLink.source_channel_id.in_(variants))
             result = await session.execute(stmt)
@@ -194,6 +212,8 @@ class TelegramMonitor:
 
                 await session.commit()
                 await self.send_preview(user.telegram_id, new_pending, channel, media_list)
+        except Exception as e:
+            logger.error(f"process_single_message error: {e}", exc_info=True)
 
     async def send_preview(self, chat_id, post, channel, media_list):
         builder = InlineKeyboardBuilder()
