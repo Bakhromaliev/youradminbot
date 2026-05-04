@@ -147,83 +147,82 @@ class TelegramMonitor:
             variants = []
             if chat_id_num:
                 variants.append(str(chat_id_num))
-                # Telegram kanal IDlari -100 prefiksi bilan ham saqlanadi
-                variants.append(f"-100{str(chat_id_num).lstrip('-')}") 
+                variants.append(f"-100{str(chat_id_num).lstrip('-')}")
             if hasattr(chat, 'username') and chat.username:
                 variants.extend([chat.username, f"@{chat.username}"])
             
             logger.info(f"New TG message. Chat variants: {variants}")
-        async with AsyncSessionLocal() as session:
-            stmt = select(SourceChannelLink).where(SourceChannelLink.source_channel_id.in_(variants))
-            result = await session.execute(stmt)
-            links = result.scalars().all()
-            if not links: return
-
-            text = message.message or ""
             
-            # --- PREMIUM EMOJILARNI SAQLASH ---
-            from telethon.tl.types import MessageEntityCustomEmoji
-            if message.entities:
-                # Entities-larni teskari tartibda qayta ishlaymiz (matn siljib ketmasligi uchun)
-                sorted_entities = sorted(message.entities, key=lambda e: e.offset, reverse=True)
-                for ent in sorted_entities:
-                    if isinstance(ent, MessageEntityCustomEmoji):
-                        # Emodji ID-sini va original emodji belgisini saqlaymiz
-                        emoji_id = ent.document_id
-                        original_emoji = text[ent.offset : ent.offset + ent.length]
-                        replacement = f"[[emoji_id:{emoji_id}:{original_emoji}]]"
-                        text = text[:ent.offset] + replacement + text[ent.offset + ent.length:]
-            # -----------------------------------
-            file_path = None
-            m_type = None
-            if message.media:
-                file_path = await message.download_media(file=f"{self.download_path}/")
-                m_type = 'photo' if hasattr(message.media, 'photo') else 'video'
-            
-            # Agressiv tozalash (Barcha turdagi linklar va username'lar)
-            clean_text = re.sub(r'https?://\S+', '', text)
-            clean_text = re.sub(r't\.me/\S+', '', clean_text)
-            clean_text = re.sub(r'tg://\S+', '', clean_text)
-            clean_text = re.sub(r'www\.\S+', '', clean_text)
-            clean_text = re.sub(r'@\w+', '', clean_text)
-            clean_text = clean_text.strip()
+            async with AsyncSessionLocal() as session:
+                stmt = select(SourceChannelLink).where(SourceChannelLink.source_channel_id.in_(variants))
+                result = await session.execute(stmt)
+                links = result.scalars().all()
+                if not links: return
 
-            for link in links:
-                user_res = await session.execute(select(User).where(User.id == link.user_id))
-                user = user_res.scalar_one()
-                ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
-                channel = ch_res.scalar_one()
-
-                # --- LIMIT TEKSHIRUVI ---
-                if not user.is_vip and user.telegram_id != 1400240097:
-                    today = date.today()
-                    count_res = await session.execute(
-                        select(PendingPost).where(
-                            PendingPost.user_id == user.id,
-                            PendingPost.created_at >= datetime.combine(today, datetime.min.time())
-                        )
-                    )
-                    daily_count = len(count_res.scalars().all())
-                    if daily_count >= 5:
-                        await self.bot.send_message(user.telegram_id, get_text('limit_reached', user.bot_language or 'uz'), parse_mode="HTML")
-                        continue
-                # -------------------------
-
-                translated = await self.translator.translate(clean_text, target_lang=channel.target_lang, target_alphabet=channel.alphabet)
-                # Premium emojilarni darhol dekodlaymiz
-                translated = _decode_premium_emojis(translated)
+                text = message.message or ""
                 
-                new_pending = PendingPost(user_id=user.id, link_id=link.id, source_type="telegram", original_text=text, translated_text=translated)
-                session.add(new_pending)
-                await session.flush()
+                # --- PREMIUM EMOJILARNI SAQLASH ---
+                from telethon.tl.types import MessageEntityCustomEmoji
+                if message.entities:
+                    sorted_entities = sorted(message.entities, key=lambda e: e.offset, reverse=True)
+                    for ent in sorted_entities:
+                        if isinstance(ent, MessageEntityCustomEmoji):
+                            emoji_id = ent.document_id
+                            original_emoji = text[ent.offset : ent.offset + ent.length]
+                            replacement = f"[[emoji_id:{emoji_id}:{original_emoji}]]"
+                            text = text[:ent.offset] + replacement + text[ent.offset + ent.length:]
+                # -----------------------------------
+                
+                file_path = None
+                m_type = None
+                if message.media:
+                    file_path = await message.download_media(file=f"{self.download_path}/")
+                    m_type = 'photo' if hasattr(message.media, 'photo') else 'video'
+                
+                # Tozalash (linklar va username'lar)
+                clean_text = re.sub(r'https?://\S+', '', text)
+                clean_text = re.sub(r't\.me/\S+', '', clean_text)
+                clean_text = re.sub(r'tg://\S+', '', clean_text)
+                clean_text = re.sub(r'www\.\S+', '', clean_text)
+                clean_text = re.sub(r'@\w+', '', clean_text)
+                clean_text = clean_text.strip()
 
-                media_list = []
-                if file_path:
-                    pm = PostMedia(post_id=new_pending.id, file_id=file_path, media_type=m_type)
-                    session.add(pm); media_list.append(pm)
+                for link in links:
+                    user_res = await session.execute(select(User).where(User.id == link.user_id))
+                    user = user_res.scalar_one()
+                    ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
+                    channel = ch_res.scalar_one()
 
-                await session.commit()
-                await self.send_preview(user.telegram_id, new_pending, channel, media_list)
+                    # --- LIMIT TEKSHIRUVI ---
+                    if not user.is_vip and user.telegram_id != 1400240097:
+                        today = date.today()
+                        count_res = await session.execute(
+                            select(PendingPost).where(
+                                PendingPost.user_id == user.id,
+                                PendingPost.created_at >= datetime.combine(today, datetime.min.time())
+                            )
+                        )
+                        daily_count = len(count_res.scalars().all())
+                        if daily_count >= 5:
+                            await self.bot.send_message(user.telegram_id, get_text('limit_reached', user.bot_language or 'uz'), parse_mode="HTML")
+                            continue
+                    # -------------------------
+
+                    translated = await self.translator.translate(clean_text, target_lang=channel.target_lang, target_alphabet=channel.alphabet)
+                    translated = _decode_premium_emojis(translated)
+                    
+                    new_pending = PendingPost(user_id=user.id, link_id=link.id, source_type="telegram", original_text=text, translated_text=translated)
+                    session.add(new_pending)
+                    await session.flush()
+
+                    media_list = []
+                    if file_path:
+                        pm = PostMedia(post_id=new_pending.id, file_id=file_path, media_type=m_type)
+                        session.add(pm); media_list.append(pm)
+
+                    await session.commit()
+                    await self.send_preview(user.telegram_id, new_pending, channel, media_list)
+
         except Exception as e:
             logger.error(f"process_single_message error: {e}", exc_info=True)
 
