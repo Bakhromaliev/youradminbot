@@ -47,7 +47,12 @@ class AuthMiddleware(BaseMiddleware):
             # Yangi foydalanuvchini bazaga qo'shish (agar yo'q bo'lsa)
             if not user:
                 user = User(telegram_id=user_id, username=event.from_user.username, is_approved=True)
+                if user_id == SUPER_ADMIN_ID:
+                    user.is_admin = True
                 session.add(user)
+                await session.commit()
+            elif user_id == SUPER_ADMIN_ID and not user.is_admin:
+                user.is_admin = True
                 await session.commit()
             
             return await handler(event, data)

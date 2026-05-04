@@ -28,7 +28,12 @@ async def show_admin_panel(message: types.Message):
         if not user.is_admin: return
 
         settings_res = await session.execute(select(BotSettings).where(BotSettings.id == 1))
-        settings = settings_res.scalar_one()
+        settings = settings_res.scalar_one_or_none()
+        
+        if not settings:
+            settings = BotSettings(id=1, card_number="Kiritilmagan", card_owner="Kiritilmagan")
+            session.add(settings)
+            await session.commit()
 
         builder = InlineKeyboardBuilder()
         builder.row(types.InlineKeyboardButton(text="💳 Kartani o'zgartirish", callback_data="set_card"))
