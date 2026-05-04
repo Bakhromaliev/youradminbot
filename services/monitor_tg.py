@@ -48,10 +48,13 @@ class TelegramMonitor:
                 if s and s.startswith('@'):
                     await self.join_source(s)
 
-        # Yangi xabarlarni tutish
+        # Yangi xabarlarni tutish — FAQAT kanallardan
         @self.client.on(events.NewMessage)
         async def handle_new_post(event):
             try:
+                # Faqat kanal postlarini olamiz
+                if not event.is_channel:
+                    return
                 if event.grouped_id:
                     gid = event.grouped_id
                     if gid not in self.media_groups:
@@ -151,14 +154,23 @@ class TelegramMonitor:
             if hasattr(chat, 'username') and chat.username:
                 variants.extend([chat.username, f"@{chat.username}"])
             
-            logger.info(f"New TG message. Chat variants: {variants}")
+            logger.info(f"New TG channel message. Chat variants for DB lookup: {variants}")
             
             async with AsyncSessionLocal() as session:
-                stmt = select(SourceChannelLink).where(SourceChannelLink.source_channel_id.in_(variants))
-                result = await session.execute(stmt)
-                links = result.scalars().all()
-                if not links: return
-
+                # Barcha telegram manbalarini olib, variantlar bilan solishtirish
+                all_links = await session.execute(
+                    select(SourceChannelLink).where(
+                        SourceChannelLink.source_channel_id.in_(variants)
+                    )
+                )
+                links = all_links.scalars().all()
+                
+                if not links:
+                    # Logda ko'rsatamiz (debug uchun)
+                    logger.warning(f"No matching links for variants: {variants}")
+                    return
+                
+                logger.info(f"Found {len(links)} matching links for this message.")
                 text = message.message or ""
                 
                 # --- PREMIUM EMOJILARNI SAQLASH ---

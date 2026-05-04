@@ -84,3 +84,26 @@ async def process_language(message: types.Message, state: FSMContext):
         )
     else:
         await message.answer("Iltimos, tugmalardan birini tanlang.")
+
+# --- DEBUG BUYRUG'I (Faqat Admin uchun) ---
+@router.message(F.text == "/debug_sources")
+async def debug_sources(message: types.Message):
+    SUPER_ADMIN_ID = int(os.getenv("ADMIN_ID", "1400240097"))
+    if message.from_user.id != SUPER_ADMIN_ID:
+        return
+    
+    from database.models import SourceChannelLink, Source
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(SourceChannelLink))
+        links = result.scalars().all()
+        
+        if not links:
+            return await message.answer("❌ Bazada hech qanday SourceChannelLink yo'q.")
+        
+        text = "🔍 <b>Bazadagi SourceChannelLink yozuvlari:</b>\n\n"
+        for lnk in links:
+            text += f"• ID: <code>{lnk.id}</code>\n"
+            text += f"  source_channel_id: <code>{lnk.source_channel_id}</code>\n"
+            text += f"  channel_db_id: <code>{lnk.channel_db_id}</code>\n\n"
+        
+        await message.answer(text, parse_mode="HTML")
