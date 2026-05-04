@@ -68,12 +68,21 @@ class TranslatorService:
                 response = model.generate_content(prompt, safety_settings=safety_settings)
                 if response and hasattr(response, 'text') and response.text:
                     result = response.text.strip()
-                    # Alifboni HAR DOIM to'g'irlash (shartga bog'lamasdan)
-                    # Gemini ko'rsatmani ko'pincha e'tiborsiz qoldiradi, shuning uchun majburiy o'tkazamiz
+                    # [[emoji_id:...]] larni saqlab, keyin alifbo o'giramiz
+                    import re as _re2
+                    emoji_pattern = r'\[\[emoji_id:[^\]]+\]\]'
+                    placeholders = _re2.findall(emoji_pattern, result)
+                    # Emoji joylarini vaqtincha belgi bilan almashtirish
+                    for i, ph in enumerate(placeholders):
+                        result = result.replace(ph, f'__EMOJI_{i}__', 1)
+                    # Alifboni o'girish
                     if target_alphabet == 'cyrillic':
                         result = self.to_cyrillic(result)
                     elif target_alphabet == 'latin':
                         result = self.to_latin(result)
+                    # Emojilarni qaytarish
+                    for i, ph in enumerate(placeholders):
+                        result = result.replace(f'__EMOJI_{i}__', ph)
                     return result
             except Exception as e:
                 logger.warning(f"Gemini {m_name} failed: {e}")
