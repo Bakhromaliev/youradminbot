@@ -52,7 +52,15 @@ async def give_vip_status(callback: types.CallbackQuery, bot: Bot):
     await callback.answer()
 
 @router.callback_query(F.data.startswith("sys_reject_"))
-async def sys_reject_user(callback: types.CallbackQuery):
+async def sys_reject_user(callback: types.CallbackQuery, bot: Bot):
     user_id = int(callback.data.split("_")[-1])
-    await callback.message.edit_text(f"❌ Foydalanuvchi (ID: {user_id}) rad etildi.")
+    try:
+        await callback.message.edit_caption(caption=callback.message.caption + f"\n\n❌ <b>To'lov rad etildi.</b>", parse_mode="HTML")
+    except:
+        await callback.message.edit_text(f"❌ Foydalanuvchi (ID: {user_id}) rad etildi.")
+    
+    try:
+        await bot.send_message(user_id, "❌ <b>To'lovingiz rad etildi.</b>\n\nIltimos, skrinshot to'g'ri ekanligini va to'lov o'tganligini tekshiring yoki Adminga murojaat qiling.", parse_mode="HTML")
+    except: pass
+    
     await callback.answer()
