@@ -7,7 +7,7 @@ from database.models import User
 from bot.utils.texts import get_text
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-SUPER_ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+SUPER_ADMIN_ID = int(os.getenv("ADMIN_ID", "1400240097"))
 
 class AuthMiddleware(BaseMiddleware):
     async def __call__(
