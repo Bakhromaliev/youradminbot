@@ -171,7 +171,7 @@ class TelegramMonitor:
 
         caption = (
             f"🆕 <b>Yangi post! (Telegram)</b>\n\n"
-            f"📝 Tarjima:\n{display_text}"
+            f"📝 Tarjima (nusxalash uchun ustiga bosing):\n<code>{display_text}</code>"
         )
 
         try:

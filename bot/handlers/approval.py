@@ -103,8 +103,7 @@ async def reject_post(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("edit_post_"))
 async def edit_post_start(callback: types.CallbackQuery, state: FSMContext):
     post_id = int(callback.data.split("_")[-1])
-    try: await callback.message.delete()
-    except: pass
+    # Eski xabarni o'chirmaymiz (user so'ragandek)
     await state.update_data(editing_post_id=post_id)
     await state.set_state(EditPostStates.waiting_for_new_text)
     instruction = await callback.message.answer("⌨️ Yangi matnni yuboring (imzosiz):")
@@ -144,7 +143,10 @@ async def edit_post_finish(message: types.Message, state: FSMContext, bot: Bot):
             spacing = "\n" * (channel.signature_spacing + 1)
             display_text += spacing + sig
 
-        preview_body = f"📝 Tarjima (Tahrirlangan):\n{display_text}"
+        preview_body = (
+            f"📝 <b>Tarjima (Tahrirlangan):</b>\n\n"
+            f"👇 Nusxalash uchun ustiga bosing:\n<code>{display_text}</code>"
+        )
         
         if post.media_url:
             await message.answer_photo(post.media_url, caption=preview_body, reply_markup=get_preview_keyboard(post.id), parse_mode="HTML")
