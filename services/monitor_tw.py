@@ -90,22 +90,21 @@ class TwitterMonitor:
                         raw_text = tweet.get('text') or tweet.get('full_text') or ""
                         if not raw_text: continue
                     
-                    raw_text = tweet.get('text') or tweet.get('full_text') or ""
-                    media_url = self.find_media_recursive(tweet)
-                    
-                    # Agressiv tozalash (Barcha turdagi linklar va username'lar)
-                    clean_text = re.sub(r'https?://\S+', '', raw_text)
-                    clean_text = re.sub(r't\.me/\S+', '', clean_text)
-                    clean_text = re.sub(r'tg://\S+', '', clean_text)
-                    clean_text = re.sub(r'www\.\S+', '', clean_text)
-                    clean_text = re.sub(r'@\w+', '', clean_text)
-                    clean_text = clean_text.strip()
+                        media_url = self.find_media_recursive(tweet)
+                        
+                        # Agressiv tozalash (Barcha turdagi linklar va username'lar)
+                        clean_text = re.sub(r'https?://\S+', '', raw_text)
+                        clean_text = re.sub(r't\.me/\S+', '', clean_text)
+                        clean_text = re.sub(r'tg://\S+', '', clean_text)
+                        clean_text = re.sub(r'www\.\S+', '', clean_text)
+                        clean_text = re.sub(r'@\w+', '', clean_text)
+                        clean_text = clean_text.strip()
 
-                    if not clean_text and not media_url: continue
+                        if not clean_text and not media_url: continue
 
-                    # ENDI: Ushbu tweetni barcha ushbu manbani kuzatuvchi foydalanuvchilarga tarqatamiz
-                    for source_record in sources_list:
-                        await self.process_single_tweet_for_user(tweet_id, clean_text, media_url, source_record)
+                        # ENDI: Ushbu tweetni barcha ushbu manbani kuzatuvchi foydalanuvchilarga tarqatamiz
+                        for source_record in sources_list:
+                            await self.process_single_tweet_for_user(tweet_id, clean_text, media_url, source_record)
                         
         except Exception as e:
             logger.error(f"API Error for @{username}: {e}")
