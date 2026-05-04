@@ -22,13 +22,7 @@ async def main():
     await init_db()
     
     # Bot va Dispatcher
-    token = os.getenv("BOT_TOKEN")
-    if not token:
-        logger.error("❌ BOT_TOKEN TOPILMADI!")
-    else:
-        logger.info(f"✅ Token o'qildi: {token[:5]}*** (Uzunligi: {len(token)})")
-    
-    bot = Bot(token=token)
+    bot = Bot(token=os.getenv("BOT_TOKEN"))
     dp = Dispatcher(storage=MemoryStorage())
     
     # Middleware-ni ro'yxatdan o'tkazish
