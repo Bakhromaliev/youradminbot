@@ -7,30 +7,40 @@ from bot.utils.texts import CYRILLIC_TO_LATIN, LATIN_TO_CYRILLIC
 
 logger = logging.getLogger(__name__)
 
+from deep_translator import GoogleTranslator
+
 class TranslatorService:
     def __init__(self):
         api_key = os.getenv("GEMINI_API_KEY")
+        self.model_names = []
         if api_key:
-            genai.configure(api_key=api_key)
-            self.model_names = ['models/gemini-1.5-flash', 'models/gemini-1.5-pro', 'models/gemini-pro']
-        else:
-            self.model_names = []
+            try:
+                genai.configure(api_key=api_key)
+                # Mavjud modellarni tekshiramiz
+                available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                # Eng yaxshi modellarni saralab olamiz (ustuvorlik bo'yicha)
+                priority = ['models/gemini-1.5-flash', 'models/gemini-1.5-pro', 'models/gemini-pro', 'models/gemini-1.0-pro']
+                for p in priority:
+                    if p in available_models:
+                        self.model_names.append(p)
+                
+                if not self.model_names and available_models:
+                    self.model_names = [available_models[0]] # Hech bo'lmasa bittasini olamiz
+                
+                logger.info(f"Translator Service: Available models discovered: {self.model_names}")
+            except Exception as e:
+                logger.error(f"Failed to list Gemini models: {e}")
         
-        logger.info("Translator Service updated with script-enforcement safety.")
-
     async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin') -> str:
-        if not text: return ""
+        if not text or not self.model_names: return text
         
         if not re.search(r'[a-zA-Zа-яА-ЯёЁ]', text):
             return text
 
         lang_map = {'uz': 'Uzbek', 'ru': 'Russian', 'en': 'English'}
         target_name = lang_map.get(target_lang, 'Uzbek')
-        
-        # Alifbo buyrug'ini kuchaytiramiz
-        alphabet_name = "LATIN SCRIPT (LOTIN ALIFBOSI)" if target_alphabet == 'latin' else "CYRILLIC SCRIPT (КРИЛЛ АЛИФБОСИ)"
+        alphabet_name = "LATIN SCRIPT" if target_alphabet == 'latin' else "CYRILLIC SCRIPT"
 
-        # Xavfsizlik sozlamalarini o'chiramiz (Futbol xabarlari ba'zida blocklanib qolmasligi uchun)
         safety_settings = [
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -38,40 +48,22 @@ class TranslatorService:
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
         ]
 
-        for attempt in range(2):
-            for m_name in self.model_names:
-                try:
-                    model = genai.GenerativeModel(m_name)
-                    prompt = (
-                        f"You are a master Sports Journalist and expert Uzbek linguist. \n"
-                        f"TASK: Translate the sports post below into {target_name}. \n"
-                        f"CRITICAL SCRIPT REQUIREMENT: You MUST use ONLY {alphabet_name}. Do NOT use any other script. \n"
-                        f"STRICT RULES: \n"
-                        f"1. STYLE: Native, professional football terminology. \n"
-                        f"2. CYRILLIC RULES: If Cyrillic, ensure 'E' at start of words is 'Э'. \n"
-                        f"3. FORMAT: Keep all spacing and empty lines exactly as they are. \n"
-                        f"4. CLEANING (URGENT): You MUST REMOVE any source signatures, advertising slogans, and calls to action. \n"
-                        f"   - REMOVE sentences like: 'Everything about Real Madrid in our channel', 'Join us', 'Subscribe'. \n"
-                        f"   - REMOVE all Telegram links (e.g., t.me/...) and social media handles (@...). \n"
-                        f"   - DO NOT translate advertisements. Just delete them from the text. \n"
-                        f"5. Direct Output: Return ONLY the final translated news text. \n\n"
-                        f"TEXT TO TRANSLATE:\n{text}"
-                    )
-                    
-                    logger.info(f"Translating with {m_name} to {target_alphabet}...")
-                    response = model.generate_content(prompt, safety_settings=safety_settings)
-                    
-                    if response and hasattr(response, 'text') and response.text:
-                        translated = response.text.strip()
-                        return translated
-                    else:
-                        logger.warning(f"Empty response from {m_name}. Safety reason: {response.prompt_feedback if hasattr(response, 'prompt_feedback') else 'Unknown'}")
-                    
-                except Exception as e:
-                    err_msg = f"❌ Model {m_name} error: {e}"
-                    logger.error(err_msg)
-                    # Adminga xatolikni ko'rsatish uchun (vaqtinchalik debugging)
-                    return f"DEBUG ERROR: {err_msg}\n\nORIGINAL TEXT:\n{text}"
+        # Faqat Gemini bilan tarjima qilamiz
+        for m_name in self.model_names:
+            try:
+                model = genai.GenerativeModel(m_name)
+                prompt = (
+                    f"You are a professional sports journalist. Translate this post into {target_name} ({alphabet_name}). \n"
+                    f"STRICT RULES: Clean all ads/links. Use professional football terminology. \n"
+                    f"Direct output only. \n\n"
+                    f"TEXT:\n{text}"
+                )
+                response = model.generate_content(prompt, safety_settings=safety_settings)
+                if response and hasattr(response, 'text') and response.text:
+                    return response.text.strip()
+            except Exception as e:
+                logger.warning(f"Gemini {m_name} failed: {e}")
+                continue
 
         return text
 
