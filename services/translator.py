@@ -68,13 +68,12 @@ class TranslatorService:
                 response = model.generate_content(prompt, safety_settings=safety_settings)
                 if response and hasattr(response, 'text') and response.text:
                     result = response.text.strip()
-                    # Kirill majburiy tekshiruvi: agar kirill kerak bo'lsa va AI lotin qaytargan bo'lsa
+                    # Alifboni HAR DOIM to'g'irlash (shartga bog'lamasdan)
+                    # Gemini ko'rsatmani ko'pincha e'tiborsiz qoldiradi, shuning uchun majburiy o'tkazamiz
                     if target_alphabet == 'cyrillic':
-                        latin_count = len(re.findall(r'[a-zA-Z]', result))
-                        cyrillic_count = len(re.findall(r'[а-яА-ЯёЁ]', result))
-                        if latin_count > cyrillic_count:
-                            logger.warning(f"AI returned Latin for Cyrillic request. Force-converting...")
-                            result = self.to_cyrillic(result)
+                        result = self.to_cyrillic(result)
+                    elif target_alphabet == 'latin':
+                        result = self.to_latin(result)
                     return result
             except Exception as e:
                 logger.warning(f"Gemini {m_name} failed: {e}")
@@ -83,13 +82,54 @@ class TranslatorService:
         return text
 
     def to_latin(self, text: str) -> str:
+        """Kirillni lotinga o'giradi"""
+        replacements = [
+            ('ш', 'sh'), ('Ш', 'Sh'), ('ч', 'ch'), ('Ч', 'Ch'),
+            ('ё', 'yo'), ('Ё', 'Yo'), ('ю', 'yu'), ('Ю', 'Yu'),
+            ('я', 'ya'), ('Я', 'Ya'), ('ж', 'j'),  ('Ж', 'J'),
+            ('ў', "o'"), ('Ў', "O'"), ('ғ', "g'"), ('Ғ', "G'"),
+            ('қ', 'q'),  ('Қ', 'Q'),  ('ҳ', 'h'),  ('Ҳ', 'H'),
+            ('ъ', ''),   ('ь', ''),
+            ('А', 'A'), ('Б', 'B'), ('В', 'V'), ('Г', 'G'), ('Д', 'D'),
+            ('Е', 'E'), ('З', 'Z'), ('И', 'I'), ('Й', 'Y'), ('К', 'K'),
+            ('Л', 'L'), ('М', 'M'), ('Н', 'N'), ('О', 'O'), ('П', 'P'),
+            ('Р', 'R'), ('С', 'S'), ('Т', 'T'), ('У', 'U'), ('Ф', 'F'),
+            ('Х', 'X'), ('Ц', 'Ts'),
+            ('а', 'a'), ('б', 'b'), ('в', 'v'), ('г', 'g'), ('д', 'd'),
+            ('е', 'e'), ('з', 'z'), ('и', 'i'), ('й', 'y'), ('к', 'k'),
+            ('л', 'l'), ('м', 'm'), ('н', 'n'), ('о', 'o'), ('п', 'p'),
+            ('р', 'r'), ('с', 's'), ('т', 't'), ('у', 'u'), ('ф', 'f'),
+            ('х', 'x'), ('ц', 'ts'),
+        ]
         res = text
-        for k, v in CYRILLIC_TO_LATIN.items():
-            res = res.replace(k, v)
+        for src, dst in replacements:
+            res = res.replace(src, dst)
         return res
 
     def to_cyrillic(self, text: str) -> str:
+        """Lotinni kirillga o'giradi — ko'p belgilar avval almashtiriladi"""
+        # Tartibi muhim: ko'p harfli birikmalar avval!
+        replacements = [
+            ("O'", 'Ў'), ("o'", 'ў'), ("G'", 'Ғ'), ("g'", 'ғ'),
+            ('Sh', 'Ш'), ('sh', 'ш'), ('SH', 'Ш'),
+            ('Ch', 'Ч'), ('ch', 'ч'), ('CH', 'Ч'),
+            ('Yo', 'Ё'), ('yo', 'ё'), ('YO', 'Ё'),
+            ('Yu', 'Ю'), ('yu', 'ю'), ('YU', 'Ю'),
+            ('Ya', 'Я'), ('ya', 'я'), ('YA', 'Я'),
+            ('Ye', 'Е'), ('ye', 'е'), ('YE', 'Е'),
+            ('Ts', 'Ц'), ('ts', 'ц'),
+            ('A', 'А'), ('B', 'Б'), ('D', 'Д'), ('E', 'Е'), ('F', 'Ф'),
+            ('G', 'Г'), ('H', 'Ҳ'), ('I', 'И'), ('J', 'Ж'), ('K', 'К'),
+            ('L', 'Л'), ('M', 'М'), ('N', 'Н'), ('O', 'О'), ('P', 'П'),
+            ('Q', 'Қ'), ('R', 'Р'), ('S', 'С'), ('T', 'Т'), ('U', 'У'),
+            ('V', 'В'), ('X', 'Х'), ('Y', 'Й'), ('Z', 'З'),
+            ('a', 'а'), ('b', 'б'), ('d', 'д'), ('e', 'е'), ('f', 'ф'),
+            ('g', 'г'), ('h', 'ҳ'), ('i', 'и'), ('j', 'ж'), ('k', 'к'),
+            ('l', 'л'), ('m', 'м'), ('n', 'н'), ('o', 'о'), ('p', 'п'),
+            ('q', 'қ'), ('r', 'р'), ('s', 'с'), ('t', 'т'), ('u', 'у'),
+            ('v', 'в'), ('x', 'х'), ('y', 'й'), ('z', 'з'),
+        ]
         res = text
-        for k, v in LATIN_TO_CYRILLIC.items():
-            res = res.replace(k, v)
+        for src, dst in replacements:
+            res = res.replace(src, dst)
         return res
