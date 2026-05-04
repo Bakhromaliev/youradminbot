@@ -53,11 +53,16 @@ class TelegramMonitor:
         logger.info("Telegram Monitor (Telethon) started successfully.")
 
     async def join_source(self, source_id: str):
+        if not source_id: return False
+        clean_id = source_id.replace('https://t.me/', '').replace('t.me/', '').replace('@', '').strip()
         try:
             from telethon.tl.functions.channels import JoinChannelRequest
-            await self.client(JoinChannelRequest(source_id))
+            await self.client(JoinChannelRequest(clean_id))
+            logger.info(f"Successfully joined source: @{clean_id}")
             return True
-        except: return False
+        except Exception as e:
+            logger.warning(f"Could not join @{clean_id}: {e}")
+            return False
 
     async def process_media_group_after_delay(self, gid):
         await asyncio.sleep(3.0)
