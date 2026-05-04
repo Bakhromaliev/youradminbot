@@ -8,6 +8,7 @@ from bot.middlewares.auth import AuthMiddleware
 from services.monitor_tg import TelegramMonitor
 from services.monitor_tw import TwitterMonitor
 from services.translator import TranslatorService
+from sqlalchemy import select
 from database.db import init_db, AsyncSessionLocal
 from database.models import BotSettings
 from dotenv import load_dotenv
