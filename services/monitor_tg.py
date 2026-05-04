@@ -1,7 +1,8 @@
 import logging
 import asyncio
 import os
-from pyrogram import Client, filters, types as pytypes
+from telethon import TelegramClient, events
+from telethon.sessions import StringSession
 from sqlalchemy import select
 from database.db import AsyncSessionLocal
 from database.models import SourceChannelLink, OutputChannel, User, PendingPost, PostMedia
@@ -16,15 +17,11 @@ logger = logging.getLogger(__name__)
 
 class TelegramMonitor:
     def __init__(self, api_id, api_hash, bot_token, translator: TranslatorService, aiogram_bot: Bot, session_string: str = None):
-        if session_string:
-            self.client = Client("user_session", api_id=api_id, api_hash=api_hash, session_string=session_string)
-        else:
-            self.client = Client("user_session", api_id=api_id, api_hash=api_hash)
+        self.client = TelegramClient(StringSession(session_string), api_id, api_hash)
         self.bot_token = bot_token
         self.translator = translator
         self.bot = aiogram_bot
         self.media_groups = {}
-        # Yuklash uchun papka
         self.download_path = "downloads"
         if not os.path.exists(self.download_path):
             os.makedirs(self.download_path)
@@ -32,6 +29,7 @@ class TelegramMonitor:
     async def start(self):
         await self.client.start()
         
+        # Manbalarga qo'shilish
         async with AsyncSessionLocal() as session:
             result = await session.execute(select(SourceChannelLink.source_channel_id))
             sources = result.scalars().all()
@@ -39,40 +37,41 @@ class TelegramMonitor:
                 if s and s.startswith('@'):
                     await self.join_source(s)
 
-        @self.client.on_message()
-        async def handle_new_post(client, message):
-            if message.media_group_id:
-                mg_id = message.media_group_id
-                if mg_id not in self.media_groups:
-                    self.media_groups[mg_id] = []
-                    asyncio.create_task(self.process_media_group_after_delay(mg_id))
-                self.media_groups[mg_id].append(message)
+        # Yangi xabarlarni tutish
+        @self.client.on(events.NewMessage)
+        async def handle_new_post(event):
+            if event.grouped_id:
+                gid = event.grouped_id
+                if gid not in self.media_groups:
+                    self.media_groups[gid] = []
+                    asyncio.create_task(self.process_media_group_after_delay(gid))
+                self.media_groups[gid].append(event.message)
                 return
-            await self.process_single_message(message)
+            await self.process_single_message(event.message)
 
-        logger.info("Telegram Monitor started with File-Relay support.")
+        logger.info("Telegram Monitor (Telethon) started successfully.")
 
     async def join_source(self, source_id: str):
         try:
-            await self.client.join_chat(source_id)
+            from telethon.tl.functions.channels import JoinChannelRequest
+            await self.client(JoinChannelRequest(source_id))
             return True
         except: return False
 
-    async def process_media_group_after_delay(self, mg_id):
-        await asyncio.sleep(2.5)
-        messages = self.media_groups.pop(mg_id, [])
+    async def process_media_group_after_delay(self, gid):
+        await asyncio.sleep(3.0)
+        messages = self.media_groups.pop(gid, [])
         if not messages: return
 
         text = ""
         for m in messages:
-            if m.caption: text = m.caption; break
-            elif m.text: text = m.text; break
+            if m.message: text = m.message; break
         
-        first_msg = messages[0]
-        variants = [str(first_msg.chat.id)]
-        if first_msg.chat.username:
-            variants.append(first_msg.chat.username)
-            variants.append(f"@{first_msg.chat.username}")
+        msg = messages[0]
+        chat = await msg.get_chat()
+        variants = [str(chat.id)]
+        if hasattr(chat, 'username') and chat.username:
+            variants.extend([chat.username, f"@{chat.username}"])
 
         async with AsyncSessionLocal() as session:
             stmt = select(SourceChannelLink).where(SourceChannelLink.source_channel_id.in_(variants))
@@ -80,53 +79,37 @@ class TelegramMonitor:
             links = result.scalars().all()
             if not links: return
 
+            translated_text = ""
             for link in links:
                 user_res = await session.execute(select(User).where(User.id == link.user_id))
                 user = user_res.scalar_one()
                 ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
                 channel = ch_res.scalar_one()
 
-                # LIMIT TEKSHIRISH
-                if not user.is_vip and not user.is_admin:
-                    today = datetime.utcnow().strftime('%Y-%m-%d')
-                    if user.last_post_date != today:
-                        user.daily_post_count = 0
-                        user.last_post_date = today
-                    
-                    if user.daily_post_count >= 5:
-                        if user.daily_post_count == 5:
-                            await self.bot.send_message(user.telegram_id, get_text('limit_reached', user.bot_language), parse_mode="HTML")
-                            user.daily_post_count += 1
-                            await session.commit()
-                        continue
-                    user.daily_post_count += 1
+                if not translated_text:
+                    translated_text = await self.translator.translate(text, target_lang=channel.target_lang, target_alphabet=channel.alphabet)
 
-                translated_text = await self.translator.translate(text, target_lang=channel.target_lang, target_alphabet=channel.alphabet)
-                
-                new_pending = PendingPost(
-                    user_id=user.id, link_id=link.id, source_type="telegram", 
-                    original_text=text, translated_text=translated_text, media_group_id=mg_id
-                )
+                new_pending = PendingPost(user_id=user.id, link_id=link.id, source_type="telegram", original_text=text, translated_text=translated_text, media_group_id=str(gid))
                 session.add(new_pending)
                 await session.flush()
 
-                # Albomdagi har bir faylni yuklab olamiz
-                media_for_preview = []
+                media_list = []
                 for m in messages:
-                    file_path = await self.client.download_media(m, file_name=f"{self.download_path}/")
-                    m_type = 'photo' if m.photo else 'video'
-                    pm = PostMedia(post_id=new_pending.id, file_id=file_path, media_type=m_type)
-                    session.add(pm)
-                    media_for_preview.append(pm)
-
+                    if m.media:
+                        path = await m.download_media(file=f"{self.download_path}/")
+                        m_type = 'photo' if hasattr(m.media, 'photo') else 'video'
+                        pm = PostMedia(post_id=new_pending.id, file_id=path, media_type=m_type)
+                        session.add(pm)
+                        media_list.append(pm)
+                
                 await session.commit()
-                await self.send_preview(user.telegram_id, new_pending, channel, media_for_preview)
+                await self.send_preview(user.telegram_id, new_pending, channel, media_list)
 
     async def process_single_message(self, message):
-        variants = [str(message.chat.id)]
-        if message.chat.username:
-            variants.append(message.chat.username)
-            variants.append(f"@{message.chat.username}")
+        chat = await message.get_chat()
+        variants = [str(chat.id)]
+        if hasattr(chat, 'username') and chat.username:
+            variants.extend([chat.username, f"@{chat.username}"])
         
         async with AsyncSessionLocal() as session:
             stmt = select(SourceChannelLink).where(SourceChannelLink.source_channel_id.in_(variants))
@@ -134,12 +117,12 @@ class TelegramMonitor:
             links = result.scalars().all()
             if not links: return
 
-            text = message.text or message.caption or ""
+            text = message.message or ""
             file_path = None
             m_type = None
-            if message.photo or message.video:
-                file_path = await self.client.download_media(message, file_name=f"{self.download_path}/")
-                m_type = 'photo' if message.photo else 'video'
+            if message.media:
+                file_path = await message.download_media(file=f"{self.download_path}/")
+                m_type = 'photo' if hasattr(message.media, 'photo') else 'video'
 
             for link in links:
                 user_res = await session.execute(select(User).where(User.id == link.user_id))
@@ -147,24 +130,9 @@ class TelegramMonitor:
                 ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
                 channel = ch_res.scalar_one()
 
-                # LIMIT TEKSHIRISH
-                if not user.is_vip and not user.is_admin:
-                    today = datetime.utcnow().strftime('%Y-%m-%d')
-                    if user.last_post_date != today:
-                        user.daily_post_count = 0
-                        user.last_post_date = today
-                    
-                    if user.daily_post_count >= 5:
-                        if user.daily_post_count == 5:
-                            await self.bot.send_message(user.telegram_id, get_text('limit_reached', user.bot_language), parse_mode="HTML")
-                            user.daily_post_count += 1
-                            await session.commit()
-                        continue
-                    user.daily_post_count += 1
-
-                translated_text = await self.translator.translate(text, target_lang=channel.target_lang, target_alphabet=channel.alphabet)
+                translated = await self.translator.translate(text, target_lang=channel.target_lang, target_alphabet=channel.alphabet)
                 
-                new_pending = PendingPost(user_id=user.id, link_id=link.id, source_type="telegram", original_text=text, translated_text=translated_text)
+                new_pending = PendingPost(user_id=user.id, link_id=link.id, source_type="telegram", original_text=text, translated_text=translated)
                 session.add(new_pending)
                 await session.flush()
 
@@ -182,38 +150,30 @@ class TelegramMonitor:
                     aiotypes.InlineKeyboardButton(text="❌ Rad etish", callback_data=f"reject_post_{post.id}"))
         builder.row(aiotypes.InlineKeyboardButton(text="📝 Tahrirlash", callback_data=f"edit_post_{post.id}"))
 
-        # Imzoni tayyorlaymiz
         display_text = post.translated_text
         if channel.signature:
             sig = channel.signature
             if channel.is_bold_signature: sig = f"<b>{sig}</b>"
-            spacing = "\n" * (channel.signature_spacing + 1)
-            display_text += spacing + sig
+            display_text += ("\n" * (channel.signature_spacing + 1)) + sig
 
         caption = (
-            f"🆕 <b>Yangi post!</b>\n\n"
-            f"📡 Manba: <b>{post.original_text[:30]}...</b>\n"
-            f"📢 Kanal: <b>{channel.channel_name}</b>\n"
-            f"🅰️ Alifbo: <b>{channel.alphabet}</b>\n\n"
+            f"🆕 <b>Yangi post! (Telegram)</b>\n\n"
             f"📝 Tarjima:\n{display_text}"
         )
 
-        if not media_list:
-            await self.bot.send_message(chat_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
-        elif len(media_list) == 1:
-            m = media_list[0]
-            file = FSInputFile(m.file_id)
-            if m.media_type == 'photo':
-                await self.bot.send_photo(chat_id, file, caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+        try:
+            if not media_list:
+                await self.bot.send_message(chat_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+            elif len(media_list) == 1:
+                m = media_list[0]
+                await self.bot.send_photo(chat_id, FSInputFile(m.file_id), caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML") if m.media_type == 'photo' else await self.bot.send_video(chat_id, FSInputFile(m.file_id), caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
             else:
-                await self.bot.send_video(chat_id, file, caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
-        else:
-            media_group = []
-            for i, m in enumerate(media_list):
-                file = FSInputFile(m.file_id)
-                if m.media_type == 'photo':
-                    media_group.append(aiotypes.InputMediaPhoto(media=file, caption=caption if i == 0 else "", parse_mode="HTML"))
-                else:
-                    media_group.append(aiotypes.InputMediaVideo(media=file, caption=caption if i == 0 else "", parse_mode="HTML"))
-            await self.bot.send_media_group(chat_id, media_group)
-            await self.bot.send_message(chat_id, "👆 Yuqoridagi albomni tasdiqlaysizmi?", reply_markup=builder.as_markup())
+                media_group = []
+                for i, m in enumerate(media_list):
+                    file = FSInputFile(m.file_id)
+                    if m.media_type == 'photo': media_group.append(aiotypes.InputMediaPhoto(media=file, caption=caption if i == 0 else "", parse_mode="HTML"))
+                    else: media_group.append(aiotypes.InputMediaVideo(media=file, caption=caption if i == 0 else "", parse_mode="HTML"))
+                await self.bot.send_media_group(chat_id, media_group)
+                await self.bot.send_message(chat_id, "👆 Yuqoridagi albomni tasdiqlaysizmi?", reply_markup=builder.as_markup())
+        except Exception as e:
+            logger.error(f"Notify error: {e}")
