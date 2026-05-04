@@ -13,6 +13,16 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import FSInputFile
 from datetime import datetime, date
 from bot.utils.texts import get_text
+import re as _re
+
+def _decode_premium_emojis(text: str) -> str:
+    """[[emoji_id:12345:😅]] -> <tg-emoji emoji-id="12345">😅</tg-emoji>"""
+    if not text: return text
+    return _re.sub(
+        r'\[\[emoji_id:(\d+):(.+?)\]\]',
+        r'<tg-emoji emoji-id="\1">\2</tg-emoji>',
+        text
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +210,8 @@ class TelegramMonitor:
                 # -------------------------
 
                 translated = await self.translator.translate(clean_text, target_lang=channel.target_lang, target_alphabet=channel.alphabet)
+                # Premium emojilarni darhol dekodlaymiz
+                translated = _decode_premium_emojis(translated)
                 
                 new_pending = PendingPost(user_id=user.id, link_id=link.id, source_type="telegram", original_text=text, translated_text=translated)
                 session.add(new_pending)

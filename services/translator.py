@@ -53,16 +53,16 @@ class TranslatorService:
             try:
                 model = genai.GenerativeModel(m_name)
                 prompt = (
-                    f"Siz professional O'zbek sport jurnalisti va master blogersiz. \n"
-                    f"VAZIFA: Quyidagi sport xabarini {target_name} ({alphabet_name}) tiliga shunday tarjima qilingki, u shunchaki tarjima emas, balki jonli va qiziqarli sport posti bo'lsin. \n"
-                    f"QOIDALAR: \n"
-                    f"1. SO'ZMA-SO'Z TARJIMA QILMANG: Gaplarni o'zbek tili tabiatiga moslab, ma'noli va chiroyli qilib qayta tuzing. \n"
-                    f"2. FUTBOL TERMINOLOGIYASI: Professional futbol terminlaridan foydalaning (masalan: 'dubl qayd etdi', 'darvoza to'rini larzaga keltirdi', 'transfer bozorida shov-shuv'). \n"
-                    f"3. PREMIUM EMOJILAR: Matndagi '[[emoji_id:...]]' formatidagi kodlarga mutlaqo tegmang va ularni tarjima qilmang. Ularni o'z joyida o'z holicha qoldiring. \n"
-                    f"4. TOZALASH: Barcha begona linklar (@..., t.me/...) va reklamalarni olib tashlang. \n"
-                    f"5. USLUB: Muxlislarga yoqadigan, hayajonli va professional uslubda yozing. \n"
-                    f"6. FAQAT NATIJA: Hech qanday ortiqcha izohsiz, faqat tayyor post matnini qaytaring. \n\n"
-                    f"XABAR MATNI:\n{text}"
+                    f"Sen futbolni yaxshi ko'radigan, o'zbek tilida yozadigan faol sport blogerisan. "
+                    f"Quyidagi xabarni {target_name} tilida ({alphabet_name}) yoz — lekin rasmiy yoki kitobiy emas, "
+                    f"oddiy, jonli, ko'cha tilida. Xuddi do'stingga futbol yangiligini aytayotgandek. "
+                    f"Emoji va energiya bo'lsin, lekin ortiqcha emas.\n\n"
+                    f"QOIDALAR:\n"
+                    f"1. Ko'cha tili: 'qayd etdi' o'rniga 'qo'ydi', 'amalga oshirdi' o'rniga 'qildi' de. Tabiiy gapir.\n"
+                    f"2. [[emoji_id:...]] kodlarini O'ZGARTIRMA, o'z joyida qoldir.\n"
+                    f"3. Linklar, @username va reklamalarni O'CHIR.\n"
+                    f"4. Faqat tayyor matnni qaytargin, hech qanday izoh yozma.\n\n"
+                    f"XABAR:\n{text}"
                 )
                 response = model.generate_content(prompt, safety_settings=safety_settings)
                 if response and hasattr(response, 'text') and response.text:
