@@ -18,8 +18,15 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 async def main():
-    # Ma'lumotlar bazasini ishga tushirish
+    # Ma'lumotlar bazasini ishga tushirish va Seeding
     await init_db()
+    async with AsyncSessionLocal() as session:
+        settings_check = await session.execute(select(BotSettings).where(BotSettings.id == 1))
+        if not settings_check.scalar_one_or_none():
+            new_settings = BotSettings(id=1)
+            session.add(new_settings)
+            await session.commit()
+            logger.info("✅ Boshlang'ich bot sozlamalari yaratildi.")
     
     # Bot va Dispatcher
     bot = Bot(token=os.getenv("BOT_TOKEN"))
