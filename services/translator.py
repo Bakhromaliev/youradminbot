@@ -30,6 +30,14 @@ class TranslatorService:
         # Alifbo buyrug'ini kuchaytiramiz
         alphabet_name = "LATIN SCRIPT (LOTIN ALIFBOSI)" if target_alphabet == 'latin' else "CYRILLIC SCRIPT (КРИЛЛ АЛИФБОСИ)"
 
+        # Xavfsizlik sozlamalarini o'chiramiz (Futbol xabarlari ba'zida blocklanib qolmasligi uchun)
+        safety_settings = [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+        ]
+
         for attempt in range(2):
             for m_name in self.model_names:
                 try:
@@ -51,22 +59,16 @@ class TranslatorService:
                     )
                     
                     logger.info(f"Translating with {m_name} to {target_alphabet}...")
-                    response = model.generate_content(prompt)
+                    response = model.generate_content(prompt, safety_settings=safety_settings)
                     
                     if response and hasattr(response, 'text') and response.text:
                         translated = response.text.strip()
-                        
-                        # ZAXIRA TEKSHIRUVI: Agar kirill kerak bo'lib, AI lotinda qaytargan bo'lsa
-                        if target_lang == 'uz' and target_alphabet == 'cyrillic':
-                            # Agar matnda lotin harflari ko'p bo'lsa (va bu link bo'lmasa)
-                            if len(re.findall(r'[a-zA-Z]', translated)) > len(re.findall(r'[а-яА-Я]', translated)):
-                                logger.warning("AI ignored Cyrillic instruction. Applying manual transliteration.")
-                                return self.to_cyrillic(translated)
-                        
                         return translated
+                    else:
+                        logger.warning(f"Empty response from {m_name}. Safety reason: {response.prompt_feedback if hasattr(response, 'prompt_feedback') else 'Unknown'}")
                     
                 except Exception as e:
-                    logger.warning(f"Model {m_name} failed: {e}")
+                    logger.error(f"Model {m_name} critical error: {e}")
                     continue
 
         return text

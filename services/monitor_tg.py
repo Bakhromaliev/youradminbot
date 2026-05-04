@@ -11,7 +11,7 @@ from services.translator import TranslatorService
 from aiogram import Bot, types as aiotypes
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import FSInputFile
-from datetime import datetime
+from datetime import datetime, date
 from bot.utils.texts import get_text
 
 logger = logging.getLogger(__name__)
@@ -146,6 +146,21 @@ class TelegramMonitor:
                 user = user_res.scalar_one()
                 ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
                 channel = ch_res.scalar_one()
+
+                # --- LIMIT TEKSHIRUVI ---
+                if not user.is_vip and user.telegram_id != 1400240097:
+                    today = date.today()
+                    count_res = await session.execute(
+                        select(PendingPost).where(
+                            PendingPost.user_id == user.id,
+                            PendingPost.created_at >= datetime.combine(today, datetime.min.time())
+                        )
+                    )
+                    daily_count = len(count_res.scalars().all())
+                    if daily_count >= 5:
+                        await self.bot.send_message(user.telegram_id, get_text('limit_reached', user.bot_language or 'uz'), parse_mode="HTML")
+                        continue
+                # -------------------------
 
                 translated = await self.translator.translate(clean_text, target_lang=channel.target_lang, target_alphabet=channel.alphabet)
                 
