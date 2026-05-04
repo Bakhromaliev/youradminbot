@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import os
+import re
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from sqlalchemy import select
@@ -86,8 +87,13 @@ class TelegramMonitor:
                 ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
                 channel = ch_res.scalar_one()
 
+                # Matnni tozalash (Username va Linklarni o'chirish)
+                clean_text = re.sub(r'https?://\S+', '', text) # Barcha http linklar
+                clean_text = re.sub(r'@\w+', '', clean_text)    # Barcha @username lar
+                clean_text = clean_text.strip()
+
                 if not translated_text:
-                    translated_text = await self.translator.translate(text, target_lang=channel.target_lang, target_alphabet=channel.alphabet)
+                    translated_text = await self.translator.translate(clean_text, target_lang=channel.target_lang, target_alphabet=channel.alphabet)
 
                 new_pending = PendingPost(user_id=user.id, link_id=link.id, source_type="telegram", original_text=text, translated_text=translated_text, media_group_id=str(gid))
                 session.add(new_pending)
@@ -124,13 +130,18 @@ class TelegramMonitor:
                 file_path = await message.download_media(file=f"{self.download_path}/")
                 m_type = 'photo' if hasattr(message.media, 'photo') else 'video'
 
+            # Matnni tozalash (Username va Linklarni o'chirish)
+            clean_text = re.sub(r'https?://\S+', '', text) # Barcha http linklar
+            clean_text = re.sub(r'@\w+', '', clean_text)    # Barcha @username lar
+            clean_text = clean_text.strip()
+
             for link in links:
                 user_res = await session.execute(select(User).where(User.id == link.user_id))
                 user = user_res.scalar_one()
                 ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
                 channel = ch_res.scalar_one()
 
-                translated = await self.translator.translate(text, target_lang=channel.target_lang, target_alphabet=channel.alphabet)
+                translated = await self.translator.translate(clean_text, target_lang=channel.target_lang, target_alphabet=channel.alphabet)
                 
                 new_pending = PendingPost(user_id=user.id, link_id=link.id, source_type="telegram", original_text=text, translated_text=translated)
                 session.add(new_pending)
