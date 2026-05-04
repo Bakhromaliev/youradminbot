@@ -94,8 +94,11 @@ class TwitterMonitor:
                     raw_text = tweet.get('text') or tweet.get('full_text') or ""
                     media_url = self.find_media_recursive(tweet)
                     
-                    # Matnni tozalash
-                    clean_text = re.sub(r'https://t\.co/\S+', '', raw_text).strip()
+                    # Matnni tozalash (Username va Linklarni o'chirish)
+                    clean_text = re.sub(r'https?://\S+', '', raw_text) # Barcha http linklar
+                    clean_text = re.sub(r'@\w+', '', clean_text)       # Barcha @username lar
+                    clean_text = clean_text.strip()
+
                     if not clean_text and not media_url: continue
 
                     # ENDI: Ushbu tweetni barcha ushbu manbani kuzatuvchi foydalanuvchilarga tarqatamiz

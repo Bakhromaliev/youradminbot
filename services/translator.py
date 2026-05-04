@@ -42,7 +42,8 @@ class TranslatorService:
                         f"1. STYLE: Native, professional football terminology. \n"
                         f"2. CYRILLIC RULES: If Cyrillic, ensure 'E' at start of words is 'Э'. \n"
                         f"3. FORMAT: Keep all spacing and empty lines exactly as they are. \n"
-                        f"4. Direct Output: Return ONLY the final translated text. \n\n"
+                        f"4. REMOVAL: Remove any signatures, external links, advertisements, and social media handles. \n"
+                        f"5. Direct Output: Return ONLY the final translated text. \n\n"
                         f"TEXT TO TRANSLATE:\n{text}"
                     )
                     
