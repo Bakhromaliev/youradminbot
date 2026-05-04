@@ -12,7 +12,7 @@ class TranslatorService:
         api_key = os.getenv("GEMINI_API_KEY")
         if api_key:
             genai.configure(api_key=api_key)
-            self.model_names = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro']
+            self.model_names = ['models/gemini-1.5-flash', 'models/gemini-1.5-pro', 'models/gemini-pro']
         else:
             self.model_names = []
         
