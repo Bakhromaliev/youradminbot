@@ -5,11 +5,10 @@ from bot.utils.texts import get_text
 import os
 
 def get_main_menu_keyboard(lang='uz', is_vip=False, is_admin=False, user_id=None):
-    if user_id:
-        SUPER_ADMIN_ID = int(os.getenv("ADMIN_ID", "1400240097"))
-        if user_id == SUPER_ADMIN_ID:
-            is_admin = True
-            is_vip = True
+    # Qat'iy adminlik tekshiruvi (hech qanday xatolik bo'lmasligi uchun)
+    if user_id and int(user_id) == 1400240097:
+        is_admin = True
+        is_vip = True
             
     builder = ReplyKeyboardBuilder()
     builder.row(types.KeyboardButton(text=get_text('btn_sources', lang)))

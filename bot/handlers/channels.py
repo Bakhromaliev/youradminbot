@@ -125,9 +125,15 @@ async def list_channels(message: types.Message, state: FSMContext):
     lang = await get_user_lang(message.from_user.id)
     async with AsyncSessionLocal() as session:
         user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
-        user = user_res.scalar_one()
-        result = await session.execute(select(OutputChannel).where(OutputChannel.user_id == user.id))
-        channels = result.scalars().all()
+        user = user_res.scalar_one_or_none()
+        
+        if not user:
+            user = User(telegram_id=message.from_user.id, username=message.from_user.username, is_approved=True)
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+
+        channels = (await session.execute(select(OutputChannel).where(OutputChannel.user_id == user.id))).scalars().all()
     builder = ReplyKeyboardBuilder()
     for ch in channels: builder.row(types.KeyboardButton(text=f"📢 {ch.channel_name or ch.channel_id}"))
     builder.row(types.KeyboardButton(text=get_text('btn_add_channel', lang)), types.KeyboardButton(text=get_text('btn_main_menu', lang)))

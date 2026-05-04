@@ -31,11 +31,17 @@ async def list_sources_msg(message: types.Message, state: FSMContext, override_t
     await state.clear()
     async with AsyncSessionLocal() as session:
         user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
-        user = user_res.scalar_one()
-        lang = user.bot_language
+        user = user_res.scalar_one_or_none()
         
-        # Adminlikni tekshiramiz (klaviatura uchun kerak bo'ladi)
-        SUPER_ADMIN_ID = int(os.getenv("ADMIN_ID", "1400240097"))
+        if not user:
+            # Agar foydalanuvchi bazada yo'q bo'lsa, uni yaratishga harakat qilamiz (fail-safe)
+            user = User(telegram_id=message.from_user.id, username=message.from_user.username, is_approved=True)
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+
+        lang = user.bot_language or 'uz'
+        SUPER_ADMIN_ID = 1400240097
         is_admin = (user.telegram_id == SUPER_ADMIN_ID) or user.is_admin
         sources_res = await session.execute(select(Source).where(Source.user_id == user.id))
         sources = sources_res.scalars().all()
