@@ -18,7 +18,7 @@ SUPER_ADMIN_ID = int(os.getenv("ADMIN_ID", "1400240097"))
 class VIPStates(StatesGroup):
     waiting_for_screenshot = State()
 
-@router.message(F.text.contains("💎 VIP Tarif"))
+@router.message(lambda m: m.text and ("VIP" in m.text or "Tarif" in m.text or "Tariff" in m.text or "Тариф" in m.text))
 async def show_vip_info(message: types.Message, state: FSMContext):
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(User).where(User.telegram_id == message.from_user.id))

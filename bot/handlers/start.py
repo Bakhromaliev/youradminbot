@@ -16,14 +16,25 @@ class RegistrationStates(StatesGroup):
 @router.message(F.text == "/start")
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
+    SUPER_ADMIN_ID = int(os.getenv("ADMIN_ID", "1400240097"))
+    user_id = message.from_user.id
+    
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
+        result = await session.execute(select(User).where(User.telegram_id == user_id))
         user = result.scalar_one_or_none()
 
+        is_admin = (user_id == SUPER_ADMIN_ID) or (user and user.is_admin)
+        is_vip = (user_id == SUPER_ADMIN_ID) or (user and user.is_vip)
+
         if user:
+            # Bazadagi adminlikni ham yangilab qo'yamiz (agar super admin bo'lsa)
+            if user_id == SUPER_ADMIN_ID and not user.is_admin:
+                user.is_admin = True
+                await session.commit()
+
             await message.answer(
                 get_text('welcome_msg', user.bot_language),
-                reply_markup=get_main_menu_keyboard(user.bot_language, is_vip=user.is_vip, is_admin=user.is_admin), 
+                reply_markup=get_main_menu_keyboard(user.bot_language, is_vip=is_vip, is_admin=is_admin), 
                 parse_mode="HTML"
             )
         else:
