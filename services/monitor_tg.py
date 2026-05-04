@@ -127,12 +127,26 @@ class TelegramMonitor:
             if not links: return
 
             text = message.message or ""
+            
+            # --- PREMIUM EMOJILARNI SAQLASH ---
+            from telethon.tl.types import MessageEntityCustomEmoji
+            if message.entities:
+                # Entities-larni teskari tartibda qayta ishlaymiz (matn siljib ketmasligi uchun)
+                sorted_entities = sorted(message.entities, key=lambda e: e.offset, reverse=True)
+                for ent in sorted_entities:
+                    if isinstance(ent, MessageEntityCustomEmoji):
+                        # Emodji ID-sini va original emodji belgisini saqlaymiz
+                        emoji_id = ent.document_id
+                        original_emoji = text[ent.offset : ent.offset + ent.length]
+                        replacement = f"[[emoji_id:{emoji_id}:{original_emoji}]]"
+                        text = text[:ent.offset] + replacement + text[ent.offset + ent.length:]
+            # -----------------------------------
             file_path = None
             m_type = None
             if message.media:
                 file_path = await message.download_media(file=f"{self.download_path}/")
                 m_type = 'photo' if hasattr(message.media, 'photo') else 'video'
-
+            
             # Agressiv tozalash (Barcha turdagi linklar va username'lar)
             clean_text = re.sub(r'https?://\S+', '', text)
             clean_text = re.sub(r't\.me/\S+', '', clean_text)

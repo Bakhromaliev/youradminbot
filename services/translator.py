@@ -58,9 +58,10 @@ class TranslatorService:
                     f"QOIDALAR: \n"
                     f"1. SO'ZMA-SO'Z TARJIMA QILMANG: Gaplarni o'zbek tili tabiatiga moslab, ma'noli va chiroyli qilib qayta tuzing. \n"
                     f"2. FUTBOL TERMINOLOGIYASI: Professional futbol terminlaridan foydalaning (masalan: 'dubl qayd etdi', 'darvoza to'rini larzaga keltirdi', 'transfer bozorida shov-shuv'). \n"
-                    f"3. TOZALASH: Barcha begona linklar (@..., t.me/...) va reklamalarni olib tashlang. \n"
-                    f"4. USLUB: Muxlislarga yoqadigan, hayajonli va professional uslubda yozing. \n"
-                    f"5. FAQAT NATIJA: Hech qanday ortiqcha izohsiz, faqat tayyor post matnini qaytaring. \n\n"
+                    f"3. PREMIUM EMOJILAR: Matndagi '[[emoji_id:...]]' formatidagi kodlarga mutlaqo tegmang va ularni tarjima qilmang. Ularni o'z joyida o'z holicha qoldiring. \n"
+                    f"4. TOZALASH: Barcha begona linklar (@..., t.me/...) va reklamalarni olib tashlang. \n"
+                    f"5. USLUB: Muxlislarga yoqadigan, hayajonli va professional uslubda yozing. \n"
+                    f"6. FAQAT NATIJA: Hech qanday ortiqcha izohsiz, faqat tayyor post matnini qaytaring. \n\n"
                     f"XABAR MATNI:\n{text}"
                 )
                 response = model.generate_content(prompt, safety_settings=safety_settings)

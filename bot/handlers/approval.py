@@ -43,9 +43,9 @@ async def approve_post(callback: types.CallbackQuery, bot: Bot):
         channel = ch_res.scalar_one()
         
         dest_id = channel.channel_id
-        final_text = post.translated_text
+        final_text = decode_premium_emojis(post.translated_text)
         if channel.signature:
-            sig = channel.signature
+            sig = decode_premium_emojis(channel.signature)
             if channel.is_bold_signature: sig = f"<b>{sig}</b>"
             spacing = "\n" * (channel.signature_spacing + 1)
             final_text += spacing + sig
@@ -82,6 +82,16 @@ async def approve_post(callback: types.CallbackQuery, bot: Bot):
         except Exception as e:
             logger.error(f"Approval error: {e}")
             await callback.answer(f"Xatolik: {e}", show_alert=True)
+
+def decode_premium_emojis(text: str) -> str:
+    if not text: return ""
+    import re
+    # [[emoji_id:123:😅]] -> <tg-emoji emoji-id="123">😅</tg-emoji>
+    return re.sub(
+        r'\[\[emoji_id:(\d+):(.+?)\]\]',
+        r'<tg-emoji emoji-id="\1">\2</tg-emoji>',
+        text
+    )
 
 @router.callback_query(F.data.startswith("reject_post_"))
 async def reject_post(callback: types.CallbackQuery):
