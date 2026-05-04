@@ -7,12 +7,11 @@ def get_main_menu_keyboard(lang='uz', is_vip=False, is_admin=False):
     builder.row(types.KeyboardButton(text=get_text('btn_sources', lang)))
     builder.row(types.KeyboardButton(text=get_text('btn_my_channels', lang)))
     
-    # VIP tugmasi faqat admin bo'lmaganlar uchun doim ko'rinadi
-    if not is_admin:
-        builder.row(types.KeyboardButton(text=get_text('btn_vip', lang)))
-        
+    # Admin uchun faqat Boshqaruv, oddiy foydalanuvchi uchun VIP
     if is_admin:
         builder.row(types.KeyboardButton(text="🛠 Boshqaruv"))
+    else:
+        builder.row(types.KeyboardButton(text=get_text('btn_vip', lang)))
 
     builder.row(
         types.KeyboardButton(text=get_text('btn_settings', lang)),
