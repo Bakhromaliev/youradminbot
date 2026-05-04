@@ -53,10 +53,15 @@ class TranslatorService:
             try:
                 model = genai.GenerativeModel(m_name)
                 prompt = (
-                    f"You are a professional sports journalist. Translate this post into {target_name} ({alphabet_name}). \n"
-                    f"STRICT RULES: Clean all ads/links. Use professional football terminology. \n"
-                    f"Direct output only. \n\n"
-                    f"TEXT:\n{text}"
+                    f"Siz professional O'zbek sport jurnalisti va master blogersiz. \n"
+                    f"VAZIFA: Quyidagi sport xabarini {target_name} ({alphabet_name}) tiliga shunday tarjima qilingki, u shunchaki tarjima emas, balki jonli va qiziqarli sport posti bo'lsin. \n"
+                    f"QOIDALAR: \n"
+                    f"1. SO'ZMA-SO'Z TARJIMA QILMANG: Gaplarni o'zbek tili tabiatiga moslab, ma'noli va chiroyli qilib qayta tuzing. \n"
+                    f"2. FUTBOL TERMINOLOGIYASI: Professional futbol terminlaridan foydalaning (masalan: 'dubl qayd etdi', 'darvoza to'rini larzaga keltirdi', 'transfer bozorida shov-shuv'). \n"
+                    f"3. TOZALASH: Barcha begona linklar (@..., t.me/...) va reklamalarni olib tashlang. \n"
+                    f"4. USLUB: Muxlislarga yoqadigan, hayajonli va professional uslubda yozing. \n"
+                    f"5. FAQAT NATIJA: Hech qanday ortiqcha izohsiz, faqat tayyor post matnini qaytaring. \n\n"
+                    f"XABAR MATNI:\n{text}"
                 )
                 response = model.generate_content(prompt, safety_settings=safety_settings)
                 if response and hasattr(response, 'text') and response.text:
