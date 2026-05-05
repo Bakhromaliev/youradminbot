@@ -93,8 +93,33 @@ class TelegramMonitor:
                 logger.error(f"handle_new_post error: {e}")
 
         logger.info("Telegram Monitor (Telethon) started. Listening for events...")
-        # MUHIM: Bu yerda ulanishni tirik saqlaymiz — bu bo'lmasa event'lar kelmaydi!
+        
+        # Fonda manbalarni tekshirib, yangilariga ulanib turish
+        asyncio.create_task(self.sync_sources_periodically())
+        
+        # MUHIM: Bu yerda ulanishni tirik saqlaymiz
         await self.client.run_until_disconnected()
+
+    async def sync_sources_periodically(self):
+        """Har 10 daqiqada yangi manbalarga ulanishni tekshiradi"""
+        from telethon.tl.functions.channels import JoinChannelRequest
+        while True:
+            try:
+                async with AsyncSessionLocal() as session:
+                    result = await session.execute(select(SourceChannelLink.source_channel_id))
+                    sources = result.scalars().all()
+                    for s in set(sources):
+                        if s and s.startswith('@'):
+                            try:
+                                # Bu yerda ulanishga harakat qiladi, agar uzoq bo'lsa o'tib ketadi
+                                await self.client(JoinChannelRequest(s))
+                                # logger.info(f"Auto-joined/Checked source: {s}")
+                            except Exception:
+                                pass
+            except Exception as e:
+                logger.error(f"Error in sync_sources_periodically: {e}")
+            
+            await asyncio.sleep(600) # 10 daqiqa kutish
 
     async def safe_process_message(self, message):
         """Xatolarni ushlab, process_single_message ni xavfsiz ishga tushiruvchi wrapper."""
