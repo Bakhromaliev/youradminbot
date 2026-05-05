@@ -107,3 +107,15 @@ async def debug_sources(message: types.Message):
             text += f"  channel_db_id: <code>{lnk.channel_db_id}</code>\n\n"
         
         await message.answer(text, parse_mode="HTML")
+
+@router.message(F.text == "/tg_info")
+async def tg_info(message: types.Message, tg_monitor: 'TelegramMonitor' = None):
+    SUPER_ADMIN_ID = int(os.getenv("ADMIN_ID", "1400240097"))
+    if message.from_user.id != SUPER_ADMIN_ID:
+        return
+    
+    if not tg_monitor:
+        return await message.answer("❌ Monitor topilmadi.")
+        
+    status_text = await tg_monitor.get_status()
+    await message.answer(f"📊 <b>Telegram Monitor Holati:</b>\n\n{status_text}", parse_mode="HTML")

@@ -37,6 +37,23 @@ class TelegramMonitor:
         if not os.path.exists(self.download_path):
             os.makedirs(self.download_path)
 
+    async def get_status(self):
+        """Monitor holatini tekshirish"""
+        try:
+            if not self.client.is_connected():
+                return "🔴 Telegram ulanmagan"
+            
+            me = await self.client.get_me()
+            dialogs = await self.client.get_dialogs()
+            channels = [f"{d.title} (ID: {d.id})" for d in dialogs if d.is_channel]
+            
+            status = f"✅ Telegram ulangan: {me.first_name}\n"
+            status += f"📡 Kuzatilayotgan kanallar ({len(channels)} ta):\n"
+            status += "\n".join(channels[:20]) # Dastlabki 20 tasini ko'rsatish
+            return status
+        except Exception as e:
+            return f"❌ Xato: {str(e)}"
+
     async def start(self):
         await self.client.start()
         
