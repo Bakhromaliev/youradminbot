@@ -18,11 +18,19 @@ import re as _re
 def _decode_premium_emojis(text: str) -> str:
     """[[emoji_id:12345:😅]] -> <tg-emoji emoji-id="12345">😅</tg-emoji>"""
     if not text: return text
-    return _re.sub(
+    
+    # 1. To'liq formatni dekodlash
+    text = _re.sub(
         r'\[\[emoji_id:(\d+):(.+?)\]\]',
         r'<tg-emoji emoji-id="\1">\2</tg-emoji>',
         text
     )
+    
+    # 2. Agar qolib ketgan bo'lsa (faqat ID bo'lsa), butunlay o'chirib tashlash
+    # Foydalanuvchi "emoji yozuvi chiqmasin" degani uchun tozalaymiz
+    text = _re.sub(r'\[\[emoji_id:[^\]]+\]\]', '', text)
+    
+    return text.strip()
 
 logger = logging.getLogger(__name__)
 
