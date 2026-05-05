@@ -55,15 +55,20 @@ class TelegramMonitor:
             return f"❌ Xato: {str(e)}"
 
     async def start(self):
-        await self.client.start()
-        
-        # Manbalarga qo'shilish
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(select(SourceChannelLink.source_channel_id))
-            sources = result.scalars().all()
-            for s in set(sources):
-                if s and s.startswith('@'):
-                    await self.join_source(s)
+        try:
+            if self.session_string:
+                logger.info("Connecting to Telegram using StringSession...")
+                await self.client.start()
+            else:
+                logger.info("No session string found, connecting using Bot Token...")
+                await self.client.start(bot_token=self.bot_token)
+            
+            me = await self.client.get_me()
+            logger.info(f"Telegram Monitor successfully logged in as: {me.first_name}")
+            
+        except Exception as e:
+            logger.error(f"Telegram connection FATAL ERROR: {e}")
+            return # Agar ulanmasa, qolgan qism ishlamasin
 
         # Yangi xabarlarni tutish — barcha xabarlarni qabul qilib, manba tekshiruvini DB ga qoldiramiz
         @self.client.on(events.NewMessage)
