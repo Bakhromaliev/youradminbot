@@ -72,9 +72,9 @@ class TranslatorService:
                     import re as _re2
                     emoji_pattern = r'\[\[emoji_id:[^\]]+\]\]'
                     placeholders = _re2.findall(emoji_pattern, result)
-                    # Emoji joylarini vaqtincha belgi bilan almashtirish
+                    # § belgisi harf emas — kirill/lotin o'girishda buzilmaydi
                     for i, ph in enumerate(placeholders):
-                        result = result.replace(ph, f'__EMOJI_{i}__', 1)
+                        result = result.replace(ph, f'§{i}§', 1)
                     # Alifboni o'girish
                     if target_alphabet == 'cyrillic':
                         result = self.to_cyrillic(result)
@@ -82,7 +82,7 @@ class TranslatorService:
                         result = self.to_latin(result)
                     # Emojilarni qaytarish
                     for i, ph in enumerate(placeholders):
-                        result = result.replace(f'__EMOJI_{i}__', ph)
+                        result = result.replace(f'§{i}§', ph)
                     return result
             except Exception as e:
                 logger.warning(f"Gemini {m_name} failed: {e}")
