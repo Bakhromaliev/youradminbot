@@ -98,17 +98,17 @@ class TranslatorService:
             ('я', 'ya'), ('Я', 'Ya'), ('ж', 'j'),  ('Ж', 'J'),
             ('ў', "o'"), ('Ў', "O'"), ('ғ', "g'"), ('Ғ', "G'"),
             ('қ', 'q'),  ('Қ', 'Q'),  ('ҳ', 'h'),  ('Ҳ', 'H'),
-            ('ъ', ''),   ('ь', ''),
+            ('аъ', "a'"), ('АЪ', "A'"), ('ъ', "'"), ('Ъ', "'"), ('ь', ''),
             ('А', 'A'), ('Б', 'B'), ('В', 'V'), ('Г', 'G'), ('Д', 'D'),
             ('Е', 'E'), ('З', 'Z'), ('И', 'I'), ('Й', 'Y'), ('К', 'K'),
             ('Л', 'L'), ('М', 'M'), ('Н', 'N'), ('О', 'O'), ('П', 'P'),
             ('Р', 'R'), ('С', 'S'), ('Т', 'T'), ('У', 'U'), ('Ф', 'F'),
             ('Х', 'X'), ('Ц', 'Ts'),
             ('а', 'a'), ('б', 'b'), ('в', 'v'), ('г', 'g'), ('д', 'd'),
-            ('е', 'e'), ('з', 'z'), ('и', 'i'), ('й', 'y'), ('к', 'k'),
-            ('л', 'l'), ('м', 'm'), ('н', 'n'), ('о', 'o'), ('п', 'p'),
-            ('р', 'r'), ('с', 's'), ('т', 't'), ('у', 'u'), ('ф', 'f'),
-            ('х', 'x'), ('ц', 'ts'),
+            ('е', 'e'), ('з', 'z'), ('и', 'i'), ('й', 'y'), ('k', 'k'),
+            ('л', 'l'), ('м', 'm'), ('n', 'n'), ('o', 'o'), ('p', 'p'),
+            ('r', 'r'), ('s', 's'), ('t', 't'), ('u', 'u'), ('f', 'f'),
+            ('x', 'x'), ('ts', 'ts'),
         ]
         res = text
         for src, dst in replacements:
@@ -116,10 +116,15 @@ class TranslatorService:
         return res
 
     def to_cyrillic(self, text: str) -> str:
-        """Lotinni kirillga o'giradi — ko'p belgilar avval almashtiriladi"""
-        # Tartibi muhim: ko'p harfli birikmalar avval!
+        """Lotinni kirillga o'giradi — barcha turdagi tutuq belgilarini hisobga oladi"""
+        res = text
+        # Barcha turdagi tutuq belgilarini bitta standartga keltirish
+        for apostrophe in ["’", "‘", "`", "´", "ʻ"]:
+            res = res.replace(apostrophe, "'")
+        
         replacements = [
             ("O'", 'Ў'), ("o'", 'ў'), ("G'", 'Ғ'), ("g'", 'ғ'),
+            ("A'", 'АЪ'), ("a'", 'аъ'), # a'zo -> аъзо
             ('Sh', 'Ш'), ('sh', 'ш'), ('SH', 'Ш'),
             ('Ch', 'Ч'), ('ch', 'ч'), ('CH', 'Ч'),
             ('Yo', 'Ё'), ('yo', 'ё'), ('YO', 'Ё'),
@@ -137,8 +142,13 @@ class TranslatorService:
             ('l', 'л'), ('m', 'м'), ('n', 'н'), ('o', 'о'), ('p', 'п'),
             ('q', 'қ'), ('r', 'р'), ('s', 'с'), ('t', 'т'), ('u', 'у'),
             ('v', 'в'), ('x', 'х'), ('y', 'й'), ('z', 'з'),
+            ("'", 'ъ'), # qolgan barcha tutuq belgilari ъ bo'ladi (qat'iy -> қатъий)
         ]
-        res = text
+        
         for src, dst in replacements:
             res = res.replace(src, dst)
+            
+        # Maxsus tuzatishlar
+        res = res.replace(' еди', ' эди').replace(' Еди', ' Эди')
+        
         return res
