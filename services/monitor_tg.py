@@ -48,13 +48,10 @@ class TelegramMonitor:
                 if s and s.startswith('@'):
                     await self.join_source(s)
 
-        # Yangi xabarlarni tutish — FAQAT kanallardan
+        # Yangi xabarlarni tutish — barcha xabarlarni qabul qilib, manba tekshiruvini DB ga qoldiramiz
         @self.client.on(events.NewMessage)
         async def handle_new_post(event):
             try:
-                # Faqat kanal postlarini olamiz
-                if not event.is_channel:
-                    return
                 if event.grouped_id:
                     gid = event.grouped_id
                     if gid not in self.media_groups:
@@ -62,12 +59,13 @@ class TelegramMonitor:
                         asyncio.create_task(self.process_media_group_after_delay(gid))
                     self.media_groups[gid].append(event.message)
                     return
-                # MUHIM: create_task orqali chiqaramiz — bot event loop ni bloklab qolmasin!
                 asyncio.create_task(self.safe_process_message(event.message))
             except Exception as e:
                 logger.error(f"handle_new_post error: {e}")
 
-        logger.info("Telegram Monitor (Telethon) started successfully.")
+        logger.info("Telegram Monitor (Telethon) started. Listening for events...")
+        # MUHIM: Bu yerda ulanishni tirik saqlaymiz — bu bo'lmasa event'lar kelmaydi!
+        await self.client.run_until_disconnected()
 
     async def safe_process_message(self, message):
         """Xatolarni ushlab, process_single_message ni xavfsiz ishga tushiruvchi wrapper."""
