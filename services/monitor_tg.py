@@ -28,14 +28,21 @@ logger = logging.getLogger(__name__)
 
 class TelegramMonitor:
     def __init__(self, api_id, api_hash, bot_token, translator: TranslatorService, aiogram_bot: Bot, session_string: str = None):
-        self.client = TelegramClient(StringSession(session_string), api_id, api_hash)
+        self.api_id = api_id
+        self.api_hash = api_hash
         self.bot_token = bot_token
         self.translator = translator
         self.bot = aiogram_bot
+        self.session_string = session_string
         self.media_groups = {}
         self.download_path = "downloads"
         if not os.path.exists(self.download_path):
             os.makedirs(self.download_path)
+        
+        if session_string:
+            self.client = TelegramClient(StringSession(session_string), api_id, api_hash)
+        else:
+            self.client = TelegramClient('bot_session', api_id, api_hash)
 
     async def get_status(self):
         """Monitor holatini tekshirish"""
