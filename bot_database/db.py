@@ -1,12 +1,11 @@
 import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
 from .models import Base
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./database.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./bot_database.db")
 
 # Render PostgreSQL havolasini asyncpg ga moslash
 if DATABASE_URL.startswith("postgres://"):

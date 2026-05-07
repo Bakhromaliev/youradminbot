@@ -3,37 +3,62 @@ import logging
 import asyncio
 import re
 import google.generativeai as genai
-from bot.utils.texts import CYRILLIC_TO_LATIN, LATIN_TO_CYRILLIC
+from openai import AsyncOpenAI
+from bot_database.models import BotSettings
 
 logger = logging.getLogger(__name__)
 
-from deep_translator import GoogleTranslator
-
 class TranslatorService:
     def __init__(self):
+        # Gemini sozlamalari
         api_key = os.getenv("GEMINI_API_KEY")
         self.model_names = []
         if api_key:
             try:
                 genai.configure(api_key=api_key)
-                # Mavjud modellarni tekshiramiz
                 available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                # Eng yaxshi modellarni saralab olamiz (ustuvorlik bo'yicha)
-                priority = ['models/gemini-1.5-flash', 'models/gemini-1.5-pro', 'models/gemini-pro', 'models/gemini-1.0-pro']
+                priority = ['models/gemini-1.5-flash', 'models/gemini-1.5-pro']
                 for p in priority:
-                    if p in available_models:
+                    if p in available_models: 
                         self.model_names.append(p)
-                
-                if not self.model_names and available_models:
-                    self.model_names = [available_models[0]] # Hech bo'lmasa bittasini olamiz
-                
-                logger.info(f"Translator Service: Available models discovered: {self.model_names}")
+                if not self.model_names and available_models: 
+                    self.model_names = [available_models[0]]
+                logger.info(f"Translator Service: Gemini models: {self.model_names}")
             except Exception as e:
                 logger.error(f"Failed to list Gemini models: {e}")
         
-    async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin') -> str:
-        if not text or not self.model_names: return text
+        # OpenAI sozlamalari
+        self.openai_client = None
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key:
+            self.openai_client = AsyncOpenAI(api_key=openai_key)
+            logger.info("Translator Service: OpenAI ChatGPT initialized.")
+
+    def post_process(self, result: str, target_alphabet: str, original_text: str) -> str:
+        """Tarjimadan keyingi ishlov berish (alifbo va emojilar)"""
+        # [[emoji_id:...]] larni saqlab qolamiz
+        emoji_pattern = r'\[\[emoji_id:[^\]]+\]\]'
+        placeholders = re.findall(emoji_pattern, result)
         
+        for i, ph in enumerate(placeholders):
+            result = result.replace(ph, f'§{i}§', 1)
+        
+        # Alifboni o'girish
+        if target_alphabet == 'cyrillic':
+            result = self.to_cyrillic(result)
+        elif target_alphabet == 'latin':
+            result = self.to_latin(result)
+            
+        # Emojilarni qaytarish
+        for i, ph in enumerate(placeholders):
+            result = result.replace(f'§{i}§', ph)
+            
+        return result
+
+    async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin') -> str:
+        if not text: return text
+        
+        # Faqat harflar bor matnlarni tarjima qilamiz
         if not re.search(r'[a-zA-Zа-яА-ЯёЁ]', text):
             return text
 
@@ -41,6 +66,34 @@ class TranslatorService:
         target_name = lang_map.get(target_lang, 'Uzbek')
         alphabet_name = "LATIN SCRIPT" if target_alphabet == 'latin' else "CYRILLIC SCRIPT"
 
+        prompt = (
+            f"Siz O'zbek tilida yozadigan tajribali sport muxbirisiz.\n"
+            f"Quyidagi xabarni {target_name} tiliga tarjima qiling.\n\n"
+            f"MAJBURIY ALIFBO: Faqat {alphabet_name} ishlating. "
+            f"Hech qanday aralash yozuv bo'lmasin.\n\n"
+            f"QOIDALAR:\n"
+            f"1. Tarjimani tushunarli, ravon va ma'noli qiling. Sport muxbiri uslubida bo'lsin.\n"
+            f"2. Futbol atamalarini to'g'ri ishlating.\n"
+            f"3. [[emoji_id:...]] formatidagi kodlarni o'zgartirmang.\n"
+            f"4. Linklar va reklamalarni o'chiring.\n"
+            f"5. Faqat tayyor tarjima matnini qaytaring.\n\n"
+            f"MATN:\n{text}"
+        )
+
+        # 1. ChatGPT orqali tarjima (Asosiy)
+        if self.openai_client:
+            try:
+                response = await self.openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "system", "content": "Siz sport muxbirisiz."}, {"role": "user", "content": prompt}],
+                    temperature=0.3
+                )
+                result = response.choices[0].message.content.strip()
+                return self.post_process(result, target_alphabet, text)
+            except Exception as e:
+                logger.error(f"OpenAI translation failed: {e}")
+
+        # 2. Gemini orqali tarjima (Fallback)
         safety_settings = [
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -48,42 +101,13 @@ class TranslatorService:
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
         ]
 
-        # Faqat Gemini bilan tarjima qilamiz
         for m_name in self.model_names:
             try:
                 model = genai.GenerativeModel(m_name)
-                prompt = (
-                    f"Siz O'zbek tilida yozadigan tajribali sport muxbirisiz.\n"
-                    f"Quyidagi xabarni {target_name} tiliga tarjima qiling.\n\n"
-                    f"MAJBURIY ALIFBO: Faqat {alphabet_name} ishlating. "
-                    f"Hech qanday aralash yozuv bo'lmasin — yo to'liq lotin, yo to'liq kirill.\n\n"
-                    f"QOIDALAR:\n"
-                    f"1. Tarjimani tushunarli, ravon va ma'noli qiling. Na juda rasmiy, na jargon.\n"
-                    f"2. Futbol atamalarini to'g'ri ishlating.\n"
-                    f"3. [[emoji_id:...]] formatidagi kodlarni o'zgartirmang.\n"
-                    f"4. Linklar, @username va reklamalarni o'chiring.\n"
-                    f"5. Faqat tayyor tarjima matnini qaytaring.\n\n"
-                    f"MATN:\n{text}"
-                )
                 response = model.generate_content(prompt, safety_settings=safety_settings)
                 if response and hasattr(response, 'text') and response.text:
                     result = response.text.strip()
-                    # [[emoji_id:...]] larni saqlab, keyin alifbo o'giramiz
-                    import re as _re2
-                    emoji_pattern = r'\[\[emoji_id:[^\]]+\]\]'
-                    placeholders = _re2.findall(emoji_pattern, result)
-                    # § belgisi harf emas — kirill/lotin o'girishda buzilmaydi
-                    for i, ph in enumerate(placeholders):
-                        result = result.replace(ph, f'§{i}§', 1)
-                    # Alifboni o'girish
-                    if target_alphabet == 'cyrillic':
-                        result = self.to_cyrillic(result)
-                    elif target_alphabet == 'latin':
-                        result = self.to_latin(result)
-                    # Emojilarni qaytarish
-                    for i, ph in enumerate(placeholders):
-                        result = result.replace(f'§{i}§', ph)
-                    return result
+                    return self.post_process(result, target_alphabet, text)
             except Exception as e:
                 logger.warning(f"Gemini {m_name} failed: {e}")
                 continue
@@ -116,15 +140,14 @@ class TranslatorService:
         return res
 
     def to_cyrillic(self, text: str) -> str:
-        """Lotinni kirillga o'giradi — barcha turdagi tutuq belgilarini hisobga oladi"""
+        """Lotinni kirillga o'giradi"""
         res = text
-        # Barcha turdagi tutuq belgilarini bitta standartga keltirish
         for apostrophe in ["’", "‘", "`", "´", "ʻ"]:
             res = res.replace(apostrophe, "'")
         
         replacements = [
             ("O'", 'Ў'), ("o'", 'ў'), ("G'", 'Ғ'), ("g'", 'ғ'),
-            ("A'", 'АЪ'), ("a'", 'аъ'), # a'zo -> аъзо
+            ("A'", 'АЪ'), ("a'", 'аъ'),
             ('Sh', 'Ш'), ('sh', 'ш'), ('SH', 'Ш'),
             ('Ch', 'Ч'), ('ch', 'ч'), ('CH', 'Ч'),
             ('Yo', 'Ё'), ('yo', 'ё'), ('YO', 'Ё'),
@@ -142,13 +165,8 @@ class TranslatorService:
             ('l', 'л'), ('m', 'м'), ('n', 'н'), ('o', 'о'), ('p', 'п'),
             ('q', 'қ'), ('r', 'р'), ('s', 'с'), ('t', 'т'), ('u', 'у'),
             ('v', 'в'), ('x', 'х'), ('y', 'й'), ('z', 'з'),
-            ("'", 'ъ'), # qolgan barcha tutuq belgilari ъ bo'ladi (qat'iy -> қатъий)
+            ("'", 'ъ'),
         ]
-        
         for src, dst in replacements:
             res = res.replace(src, dst)
-            
-        # Maxsus tuzatishlar
-        res = res.replace(' еди', ' эди').replace(' Еди', ' Эди')
-        
         return res
