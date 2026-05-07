@@ -5,6 +5,7 @@ import re
 import google.generativeai as genai
 from openai import AsyncOpenAI
 from bot_database.models import BotSettings
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -27,15 +28,21 @@ class TranslatorService:
             except Exception as e:
                 logger.error(f"Failed to list Gemini models: {e}")
         
-        # OpenAI sozlamalari
+        # OpenAI sozlamalari (Timeout qo'shildi)
         self.openai_client = None
         openai_key = os.getenv("OPENAI_API_KEY")
         if openai_key:
-            self.openai_client = AsyncOpenAI(api_key=openai_key)
-            logger.info("Translator Service: OpenAI ChatGPT initialized.")
+            # Uzun matnlar uchun timeout-ni 60 soniyaga oshiramiz
+            self.openai_client = AsyncOpenAI(
+                api_key=openai_key,
+                timeout=httpx.Timeout(60.0, connect=10.0)
+            )
+            logger.info("Translator Service: OpenAI ChatGPT initialized with extended timeout.")
 
     def post_process(self, result: str, target_alphabet: str, original_text: str) -> str:
         """Tarjimadan keyingi ishlov berish (alifbo va emojilar)"""
+        if not result: return ""
+        
         # [[emoji_id:...]] larni saqlab qolamiz
         emoji_pattern = r'\[\[emoji_id:[^\]]+\]\]'
         placeholders = re.findall(emoji_pattern, result)
@@ -89,9 +96,10 @@ class TranslatorService:
                     temperature=0.3
                 )
                 result = response.choices[0].message.content.strip()
-                return self.post_process(result, target_alphabet, text)
+                if result:
+                    return self.post_process(result, target_alphabet, text)
             except Exception as e:
-                logger.error(f"OpenAI translation failed: {e}")
+                logger.error(f"OpenAI translation failed (timeout/connection): {e}")
 
         # 2. Gemini orqali tarjima (Fallback)
         safety_settings = [
@@ -101,16 +109,21 @@ class TranslatorService:
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
         ]
 
-        for m_name in self.model_names:
-            try:
-                model = genai.GenerativeModel(m_name)
-                response = model.generate_content(prompt, safety_settings=safety_settings)
-                if response and hasattr(response, 'text') and response.text:
-                    result = response.text.strip()
-                    return self.post_process(result, target_alphabet, text)
-            except Exception as e:
-                logger.warning(f"Gemini {m_name} failed: {e}")
-                continue
+        if self.model_names:
+            for m_name in self.model_names:
+                try:
+                    model = genai.GenerativeModel(m_name)
+                    # Gemini uchun ham timeout-ni nazorat qilamiz
+                    response = await asyncio.wait_for(
+                        asyncio.to_thread(model.generate_content, prompt, safety_settings=safety_settings),
+                        timeout=40.0
+                    )
+                    if response and hasattr(response, 'text') and response.text:
+                        result = response.text.strip()
+                        return self.post_process(result, target_alphabet, text)
+                except Exception as e:
+                    logger.warning(f"Gemini {m_name} failed: {e}")
+                    continue
 
         return text
 
