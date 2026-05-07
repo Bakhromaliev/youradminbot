@@ -89,6 +89,12 @@ class TelegramMonitor:
         @self.client.on(events.NewMessage)
         async def handle_new_post(event):
             try:
+                # --- GLOBAL LOG ---
+                chat = await event.get_chat()
+                chat_title = getattr(chat, 'title', 'Unknown')
+                logger.info(f"📥 [GLOBAL] Yangi xabar keldi: '{chat_title}' (ID: {event.chat_id})")
+                # ------------------
+
                 if event.grouped_id:
                     gid = event.grouped_id
                     if gid not in self.media_groups:
@@ -116,14 +122,16 @@ class TelegramMonitor:
                 async with AsyncSessionLocal() as session:
                     result = await session.execute(select(SourceChannelLink.source_channel_id))
                     sources = result.scalars().all()
-                    for s in set(sources):
-                        if s and s.startswith('@'):
+                    unique_sources = set(sources)
+                    logger.info(f"🔄 Syncing {len(unique_sources)} sources...")
+                    for s in unique_sources:
+                        if s and (s.startswith('@') or 't.me' in s):
+                            clean_id = s.replace('https://t.me/', '').replace('t.me/', '').replace('@', '').strip()
                             try:
-                                # Bu yerda ulanishga harakat qiladi, agar uzoq bo'lsa o'tib ketadi
-                                await self.client(JoinChannelRequest(s))
-                                # logger.info(f"Auto-joined/Checked source: {s}")
-                            except Exception:
-                                pass
+                                await self.client(JoinChannelRequest(clean_id))
+                                # logger.info(f"✅ Successfully synced/joined: {s}")
+                            except Exception as e:
+                                logger.warning(f"❌ Failed to sync/join {s}: {e}")
             except Exception as e:
                 logger.error(f"Error in sync_sources_periodically: {e}")
             
