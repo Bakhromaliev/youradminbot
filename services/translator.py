@@ -2,8 +2,9 @@ import os
 import logging
 import asyncio
 import re
+import traceback
 import google.generativeai as genai
-from openai import OpenAI as SyncOpenAI # Sinxron client barqarorroq bo'lishi mumkin
+from openai import OpenAI as SyncOpenAI
 from bot_database.models import BotSettings
 import httpx
 
@@ -18,34 +19,29 @@ class TranslatorService:
             try:
                 genai.configure(api_key=api_key)
                 available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                priority = ['models/gemini-1.5-flash', 'models/gemini-1.5-pro']
-                for p in priority:
-                    if p in available_models: 
-                        self.model_names.append(p)
-                if not self.model_names and available_models: 
-                    self.model_names = [available_models[0]]
+                self.model_names = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                logger.info(f"Gemini models loaded: {len(self.model_names)}")
             except Exception as e:
-                logger.error(f"Failed to list Gemini models: {e}")
+                logger.error(f"Gemini init error: {e}")
         
         # OpenAI sozlamalari
         self.openai_key = os.getenv("OPENAI_API_KEY")
         if self.openai_key:
-            # Sinxron clientni thread ichida ishlatish barqarorroq
-            self.sync_openai = SyncOpenAI(api_key=self.openai_key, timeout=45.0)
-            logger.info("Translator Service: OpenAI (Sync) initialized.")
+            # Key borligini tekshiramiz (qiymatini ko'rsatmasdan)
+            logger.info(f"OpenAI Key found (length: {len(self.openai_key)})")
+            self.sync_openai = SyncOpenAI(api_key=self.openai_key, timeout=60.0)
+        else:
+            logger.error("CRITICAL: OPENAI_API_KEY NOT FOUND IN ENVIRONMENT!")
 
     async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin') -> str:
         if not text: return text
         
-        # 1. Emojilarni HIMOYALASH
+        # Emojilarni HIMOYALASH
         emoji_pattern = r'\[\[emoji_id:[^\]]+\]\]'
         found_emojis = re.findall(emoji_pattern, text)
         protected_text = text
         for i, emoji_code in enumerate(found_emojis):
             protected_text = protected_text.replace(emoji_code, f'____{i}____', 1)
-
-        if not re.search(r'[a-zA-Zа-яА-ЯёЁ]', protected_text):
-            return self.restore_emojis(protected_text, found_emojis, target_alphabet)
 
         lang_map = {'uz': 'Uzbek', 'ru': 'Russian', 'en': 'English'}
         target_name = lang_map.get(target_lang, 'Uzbek')
@@ -54,53 +50,46 @@ class TranslatorService:
         prompt = (
             f"Siz O'zbek tilida yozadigan tajribali sport muxbirisiz.\n"
             f"Quyidagi xabarni {target_name} tiliga tarjima qiling.\n\n"
-            f"MAJBURIY ALIFBO: Faqat {alphabet_name} ishlating.\n\n"
-            f"QOIDALAR:\n"
-            f"1. Tarjimani tushunarli va ravon qiling. Sport muxbiri uslubida bo'lsin.\n"
-            f"2. Futbol atamalarini to'g'ri ishlating.\n"
-            f"3. ____0____, ____1____ kabi kodlarni o'zgartirmang.\n"
-            f"4. Linklar va reklamalarni o'chiring.\n"
-            f"5. Faqat tayyor tarjima matnini qaytaring.\n\n"
+            f"MAJBURIY ALIFBO: Faqat {alphabet_name} ishlating.\n"
             f"MATN:\n{protected_text}"
         )
 
         translated_result = None
 
-        # ChatGPT (Primary) - Thread ichida ishga tushiramiz
+        # ChatGPT (Primary)
         if self.openai_key:
             try:
-                # asyncio.to_thread sinxron kutubxonani async muhitda ishlatishga yordam beradi
+                logger.info("Attempting OpenAI translation...")
                 response = await asyncio.to_thread(
                     self.sync_openai.chat.completions.create,
                     model="gpt-4o-mini",
-                    messages=[{"role": "system", "content": "Siz sport muxbirisiz."}, {"role": "user", "content": prompt}],
+                    messages=[{"role": "user", "content": prompt}],
                     temperature=0.3
                 )
                 translated_result = response.choices[0].message.content.strip()
                 if translated_result:
-                    logger.info("✅ SUCCESS: Translation done by ChatGPT.")
+                    logger.info("✅ SUCCESS: ChatGPT translated successfully.")
             except Exception as e:
-                logger.error(f"❌ OpenAI error: {e}")
+                # BU YERDA ANIQLIK KIRITAMIZ:
+                detailed_error = traceback.format_exc()
+                logger.error(f"❌ DETAILED OPENAI ERROR:\n{detailed_error}")
 
         # Gemini (Fallback)
         if not translated_result and self.model_names:
             try:
-                model = genai.GenerativeModel(self.model_names[0])
+                logger.info("Attempting Gemini fallback...")
+                model = genai.GenerativeModel('gemini-1.5-flash')
                 resp = await asyncio.wait_for(
                     asyncio.to_thread(model.generate_content, prompt),
-                    timeout=40.0
+                    timeout=45.0
                 )
                 if resp and hasattr(resp, 'text') and resp.text:
                     translated_result = resp.text.strip()
-                    logger.info("⚠️ FALLBACK: Translation done by Gemini.")
+                    logger.info("⚠️ FALLBACK: Gemini translated successfully.")
             except Exception as ge:
                 logger.warning(f"❌ Gemini fallback failed: {ge}")
 
-        if not translated_result:
-            translated_result = protected_text
-            logger.warning("❗ WARNING: All engines failed.")
-
-        return self.restore_emojis(translated_result, found_emojis, target_alphabet)
+        return self.restore_emojis(translated_result or protected_text, found_emojis, target_alphabet)
 
     def restore_emojis(self, text: str, original_emojis: list, target_alphabet: str) -> str:
         if target_alphabet == 'cyrillic':
