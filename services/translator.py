@@ -31,7 +31,6 @@ class TranslatorService:
     async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin') -> str:
         if not text: return text
         
-        # AQLLI FILTR
         if not re.search(r'[a-zA-Zа-яА-ЯёЁўЎғҒқҚҳҲ]', text):
             return text
 
@@ -46,20 +45,16 @@ class TranslatorService:
         target_name = lang_map.get(target_lang, 'Uzbek')
         alphabet_name = "LATIN SCRIPT" if target_alphabet == 'latin' else "CYRILLIC SCRIPT"
 
-        # YANGILANGAN TABIIY USLUB KO'RSATMASI
         system_instruction = (
             "Siz mashhur o'zbek sport blogerisiz. Vazifangiz futbol yangiliklarini o'zbek tiliga o'ta tabiiy va jonli tarjima qilish.\n"
             "USLUB QOIDALARI:\n"
-            "- 'Kitobiy' yoki o'ta adabiy tildan qoching. Xuddi telegram kanaldagi bloger yozgandek yozing.\n"
-            "- Gaplar mazmuni bir-biriga mantiqan bog'liq bo'lsin, sun'iy tuyulmasin.\n"
-            "- Ispancha ismlarni o'zbekcha talaffuzga moslang: 'Carvajal' -> 'Karvaxal', 'Juan' -> 'Xuan'.\n"
-            "- O'zbek sport muxlislari orasida ommalashgan iboralardan foydalaning (masalan: 'daxshatli o'yin', 'gol urishga yaqin keldi', 'transfer masalasi hal bo'ldi').\n"
-            "- Faqat tarjimani bering, o'zingizdan 'mana tarjima' kabi gaplarni qo'shmang."
+            "- 'Kitobiy' tildan qoching. Telegram kanaldagi kabi yozing.\n"
+            "- Ispancha ismlar: 'Carvajal' -> 'Karvaxal', 'Juan' -> 'Xuan'.\n"
+            "- MAJBURIY: Faqat lotin harflarida javob bering. Kirillchaga o'girishni o'zim bajaraman."
         )
 
         prompt = (
-            f"Quyidagi xabarni {target_name} tiliga sport blogeri uslubida tarjima qiling.\n\n"
-            f"MAJBURIY ALIFBO: Faqat {alphabet_name} ishlating.\n"
+            f"Quyidagi xabarni {target_name} tiliga lotin alifbosida tarjima qiling:\n\n"
             f"MATN:\n{protected_text}"
         )
 
@@ -81,7 +76,7 @@ class TranslatorService:
                                 {"role": "system", "content": system_instruction},
                                 {"role": "user", "content": prompt}
                             ],
-                            "temperature": 0.4 # Bir oz kreativlik uchun haroratni oshirdik
+                            "temperature": 0.4
                         }
                     )
                     
@@ -89,8 +84,6 @@ class TranslatorService:
                         data = response.json()
                         translated_result = data['choices'][0]['message']['content'].strip()
                         logger.info("✅ SUCCESS: ChatGPT used.")
-                    else:
-                        logger.error(f"❌ OpenAI API Error {response.status_code}: {response.text}")
             except Exception as e:
                 logger.error(f"❌ OpenAI Exception: {str(e)}")
 
@@ -148,6 +141,12 @@ class TranslatorService:
         return res
 
     def to_cyrillic(self, text: str) -> str:
+        # 1. So'z boshidagi yoki unlidan keyingi 'E' ni 'Э' ga o'tkazish
+        # (Lotin 'E' harfini topib, agar u so'z boshida bo'lsa 'Э' qilamiz)
+        text = re.sub(r'(^|[^a-zA-Z0-9])E', r'\1Э', text)
+        text = re.sub(r'(^|[^a-zA-Z0-9])e', r'\1э', text)
+        
+        # 2. Keyin qolgan 'Ye' va boshqa harflarni o'giramiz
         res = text
         for apostrophe in ["’", "‘", "`", "´", "ʻ"]:
             res = res.replace(apostrophe, "'")
@@ -166,11 +165,11 @@ class TranslatorService:
             ('L', 'Л'), ('M', 'М'), ('N', 'Н'), ('O', 'О'), ('P', 'П'),
             ('Q', 'Қ'), ('R', 'Р'), ('S', 'С'), ('T', 'Т'), ('U', 'У'),
             ('V', 'В'), ('X', 'Х'), ('Y', 'Й'), ('Z', 'З'),
-            ('a', 'а'), ('b', 'б'), ('d', 'д'), ('e', 'е'), ('f', 'ф'),
-            ('g', 'г'), ('h', 'ҳ'), ('i', 'и'), ('j', 'ж'), ('k', 'к'),
-            ('l', 'л'), ('m', 'м'), ('n', 'н'), ('o', 'о'), ('p', 'п'),
-            ('q', 'қ'), ('r', 'р'), ('s', 'с'), ('t', 'т'), ('u', 'у'),
-            ('v', 'в'), ('x', 'х'), ('y', 'й'), ('z', 'з'),
+            ('а', 'а'), ('б', 'б'), ('д', 'д'), ('е', 'е'), ('ф', 'ф'),
+            ('г', 'г'), ('ҳ', 'ҳ'), ('и', 'и'), ('ж', 'ж'), ('к', 'к'),
+            ('л', 'л'), ('м', 'м'), ('н', 'н'), ('о', 'о'), ('п', 'п'),
+            ('қ', 'қ'), ('р', 'р'), ('с', 'с'), ('т', 'т'), ('у', 'у'),
+            ('в', 'в'), ('х', 'х'), ('й', 'й'), ('з', 'з'),
             ("'", 'ъ'),
         ]
         for src, dst in replacements:
