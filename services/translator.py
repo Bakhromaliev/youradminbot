@@ -18,11 +18,8 @@ class TranslatorService:
         if api_key:
             try:
                 genai.configure(api_key=api_key)
-                # Modellar ro'yxatini aniq olamiz
                 models = genai.list_models()
-                for m in models:
-                    if 'generateContent' in m.supported_generation_methods:
-                        self.model_names.append(m.name)
+                self.model_names = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
                 logger.info(f"Translator Service: Gemini models found: {self.model_names}")
             except Exception as e:
                 logger.error(f"Gemini init error: {e}")
@@ -30,8 +27,8 @@ class TranslatorService:
         # OpenAI sozlamalari
         self.openai_key = os.getenv("OPENAI_API_KEY")
         if self.openai_key:
-            # Sync client bilan oddiyroq ulanish
-            self.sync_openai = SyncOpenAI(api_key=self.openai_key, timeout=45.0)
+            # Sync client
+            self.sync_openai = SyncOpenAI(api_key=self.openai_key, timeout=60.0)
             logger.info("Translator Service: OpenAI (Sync) initialized.")
 
     async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin') -> str:
@@ -57,7 +54,7 @@ class TranslatorService:
 
         translated_result = None
 
-        # 1. ChatGPT orqali tarjima
+        # 1. ChatGPT
         if self.openai_key:
             try:
                 response = await asyncio.to_thread(
@@ -70,19 +67,19 @@ class TranslatorService:
                 if translated_result:
                     logger.info("✅ SUCCESS: ChatGPT used.")
             except Exception as e:
-                logger.error(f"❌ OpenAI error: {str(e)}")
+                # MANA SHU YERDA ANIQLIK KIRITAMIZ
+                full_error = traceback.format_exc()
+                logger.error(f"❌ OPENAI DETAILED ERROR:\n{full_error}")
 
-        # 2. Gemini Fallback (Agar OpenAI o'xshamasa)
+        # 2. Gemini Fallback
         if not translated_result and self.model_names:
-            # Avval flash modelni sinaymiz, keyin boshqalarini
             priority_models = [m for m in self.model_names if 'flash' in m.lower()] + self.model_names
             for m_name in priority_models:
                 try:
-                    logger.info(f"Attempting Gemini fallback with {m_name}...")
                     model = genai.GenerativeModel(m_name)
                     resp = await asyncio.wait_for(
                         asyncio.to_thread(model.generate_content, prompt),
-                        timeout=30.0
+                        timeout=35.0
                     )
                     if resp and hasattr(resp, 'text') and resp.text:
                         translated_result = resp.text.strip()
