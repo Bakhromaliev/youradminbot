@@ -48,9 +48,9 @@ class TranslatorService:
         system_instruction = (
             "Siz mashhur o'zbek sport blogerisiz. Vazifangiz futbol yangiliklarini o'zbek tiliga o'ta tabiiy va jonli tarjima qilish.\n"
             "USLUB QOIDALARI:\n"
-            "- 'Kitobiy' tildan qoching. Telegram kanaldagi kabi yozing.\n"
+            "- Kitobiy tildan qoching. Telegram kanaldagi kabi yozing.\n"
             "- Ispancha ismlar: 'Carvajal' -> 'Karvaxal', 'Juan' -> 'Xuan'.\n"
-            "- MAJBURIY: Faqat lotin harflarida javob bering. Kirillchaga o'girishni o'zim bajaraman."
+            "- MAJBURIY: Faqat lotin harflarida javob bering."
         )
 
         prompt = (
@@ -141,15 +141,15 @@ class TranslatorService:
         return res
 
     def to_cyrillic(self, text: str) -> str:
+        # Har xil turdagi tutuq belgilarini bitta standartga keltirish
+        for apostrophe in ["’", "‘", "`", "´", "ʻ"]:
+            text = text.replace(apostrophe, "'")
+
         # 1. So'z boshidagi yoki unlidan keyingi 'E' ni 'Э' ga o'tkazish
-        # (Lotin 'E' harfini topib, agar u so'z boshida bo'lsa 'Э' qilamiz)
         text = re.sub(r'(^|[^a-zA-Z0-9])E', r'\1Э', text)
         text = re.sub(r'(^|[^a-zA-Z0-9])e', r'\1э', text)
         
-        # 2. Keyin qolgan 'Ye' va boshqa harflarni o'giramiz
         res = text
-        for apostrophe in ["’", "‘", "`", "´", "ʻ"]:
-            res = res.replace(apostrophe, "'")
         replacements = [
             ("O'", 'Ў'), ("o'", 'ў'), ("G'", 'Ғ'), ("g'", 'ғ'),
             ("A'", 'АЪ'), ("a'", 'аъ'),
@@ -168,8 +168,8 @@ class TranslatorService:
             ('а', 'а'), ('б', 'б'), ('д', 'д'), ('е', 'е'), ('ф', 'ф'),
             ('г', 'г'), ('ҳ', 'ҳ'), ('и', 'и'), ('ж', 'ж'), ('к', 'к'),
             ('л', 'л'), ('м', 'м'), ('н', 'н'), ('о', 'о'), ('п', 'п'),
-            ('қ', 'қ'), ('р', 'р'), ('с', 'с'), ('т', 'т'), ('у', 'у'),
-            ('в', 'в'), ('х', 'х'), ('й', 'й'), ('з', 'з'),
+            ('қ', 'қ'), ('r', 'р'), ('s', 'с'), ('t', 'т'), ('u', 'у'),
+            ('v', 'в'), ('x', 'х'), ('y', 'й'), ('z', 'з'),
             ("'", 'ъ'),
         ]
         for src, dst in replacements:
