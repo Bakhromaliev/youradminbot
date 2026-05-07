@@ -1,8 +1,8 @@
 import logging
 from aiogram import Router, types
 from sqlalchemy import select, func
-from database.db import AsyncSessionLocal
-from database.models import User, Source, OutputChannel, PendingPost
+from bot_database.db import AsyncSessionLocal
+from bot_database.models import User, Source, OutputChannel, PendingPost
 from bot.utils.texts import get_text
 from bot.utils.keyboards import get_main_menu_keyboard
 

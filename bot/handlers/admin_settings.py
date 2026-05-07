@@ -4,8 +4,8 @@ from aiogram import Router, types, F, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy import select, update
-from database.db import AsyncSessionLocal
-from database.models import BotSettings, User
+from bot_database.db import AsyncSessionLocal
+from bot_database.models import BotSettings, User
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 logger = logging.getLogger(__name__)

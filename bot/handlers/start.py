@@ -4,8 +4,8 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy import select
-from database.db import AsyncSessionLocal
-from database.models import User
+from bot_database.db import AsyncSessionLocal
+from bot_database.models import User
 from bot.utils.texts import get_text, LANG_LABELS
 from bot.utils.keyboards import get_main_menu_keyboard # YANGI
 
@@ -92,7 +92,7 @@ async def debug_sources(message: types.Message):
     if message.from_user.id != SUPER_ADMIN_ID:
         return
     
-    from database.models import SourceChannelLink, Source
+    from bot_database.models import SourceChannelLink, Source
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(SourceChannelLink))
         links = result.scalars().all()

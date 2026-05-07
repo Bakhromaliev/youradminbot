@@ -5,8 +5,8 @@ import httpx
 import re
 from datetime import datetime
 from sqlalchemy import select
-from database.db import AsyncSessionLocal
-from database.models import Source, SourceChannelLink, OutputChannel, User, PendingPost
+from bot_database.db import AsyncSessionLocal
+from bot_database.models import Source, SourceChannelLink, OutputChannel, User, PendingPost
 from services.translator import TranslatorService
 from aiogram import Bot, types as aiotypes
 from aiogram.utils.keyboard import InlineKeyboardBuilder

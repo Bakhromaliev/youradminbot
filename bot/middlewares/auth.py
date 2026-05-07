@@ -3,8 +3,8 @@ import logging
 from typing import Any, Awaitable, Callable, Dict
 from aiogram import BaseMiddleware, types
 from sqlalchemy import select
-from database.db import AsyncSessionLocal
-from database.models import User
+from bot_database.db import AsyncSessionLocal
+from bot_database.models import User
 from bot.utils.texts import get_text
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 

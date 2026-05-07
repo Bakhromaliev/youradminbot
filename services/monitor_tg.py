@@ -5,8 +5,8 @@ import re
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from sqlalchemy import select
-from database.db import AsyncSessionLocal
-from database.models import SourceChannelLink, OutputChannel, User, PendingPost, PostMedia
+from bot_database.db import AsyncSessionLocal
+from bot_database.models import SourceChannelLink, OutputChannel, User, PendingPost, PostMedia
 from services.translator import TranslatorService
 from aiogram import Bot, types as aiotypes
 from aiogram.utils.keyboard import InlineKeyboardBuilder

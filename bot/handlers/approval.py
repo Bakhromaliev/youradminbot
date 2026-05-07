@@ -6,8 +6,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
-from database.db import AsyncSessionLocal
-from database.models import PendingPost, SourceChannelLink, OutputChannel, User, PostMedia
+from bot_database.db import AsyncSessionLocal
+from bot_database.models import PendingPost, SourceChannelLink, OutputChannel, User, PostMedia
 from bot.utils.texts import get_text
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import FSInputFile

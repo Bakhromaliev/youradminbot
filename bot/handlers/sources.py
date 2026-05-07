@@ -5,8 +5,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy import select, delete
-from database.db import AsyncSessionLocal
-from database.models import User, Source, SourceChannelLink, OutputChannel
+from bot_database.db import AsyncSessionLocal
+from bot_database.models import User, Source, SourceChannelLink, OutputChannel
 from bot.utils.texts import get_text
 
 logger = logging.getLogger(__name__)

@@ -1,8 +1,8 @@
 import logging
 from aiogram import Router, types, F, Bot
 from sqlalchemy import update, select
-from database.db import AsyncSessionLocal
-from database.models import User
+from bot_database.db import AsyncSessionLocal
+from bot_database.models import User
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
