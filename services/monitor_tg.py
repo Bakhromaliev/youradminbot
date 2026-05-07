@@ -324,18 +324,49 @@ class TelegramMonitor:
         )
 
         try:
-            if not media_list:
-                await self.bot.send_message(chat_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
-            elif len(media_list) == 1:
-                m = media_list[0]
-                await self.bot.send_photo(chat_id, FSInputFile(m.file_id), caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML") if m.media_type == 'photo' else await self.bot.send_video(chat_id, FSInputFile(m.file_id), caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+            # Telegram caption limit is 1024. Let's use 1000 for safety.
+            if len(caption) <= 1000:
+                if not media_list:
+                    await self.bot.send_message(chat_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+                elif len(media_list) == 1:
+                    m = media_list[0]
+                    if m.media_type == 'photo':
+                        await self.bot.send_photo(chat_id, FSInputFile(m.file_id), caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+                    else:
+                        await self.bot.send_video(chat_id, FSInputFile(m.file_id), caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+                else:
+                    media_group = []
+                    for i, m in enumerate(media_list):
+                        file = FSInputFile(m.file_id)
+                        if m.media_type == 'photo': 
+                            media_group.append(aiotypes.InputMediaPhoto(media=file, caption=caption if i == 0 else "", parse_mode="HTML"))
+                        else: 
+                            media_group.append(aiotypes.InputMediaVideo(media=file, caption=caption if i == 0 else "", parse_mode="HTML"))
+                    await self.bot.send_media_group(chat_id, media_group)
+                    await self.bot.send_message(chat_id, "👆 Yuqoridagi albomni tasdiqlaysizmi?", reply_markup=builder.as_markup())
             else:
-                media_group = []
-                for i, m in enumerate(media_list):
-                    file = FSInputFile(m.file_id)
-                    if m.media_type == 'photo': media_group.append(aiotypes.InputMediaPhoto(media=file, caption=caption if i == 0 else "", parse_mode="HTML"))
-                    else: media_group.append(aiotypes.InputMediaVideo(media=file, caption=caption if i == 0 else "", parse_mode="HTML"))
-                await self.bot.send_media_group(chat_id, media_group)
-                await self.bot.send_message(chat_id, "👆 Yuqoridagi albomni tasdiqlaysizmi?", reply_markup=builder.as_markup())
+                # Agar matn juda uzun bo'lsa, rasmni qisqa xabar bilan, matnni esa alohida yuboramiz
+                short_caption = f"🆕 <b>SHERIK: Yangi post! (Telegram)</b>\n\n⚠️ Matn uzunligi sababli quyida alohida yuborildi."
+                
+                if not media_list:
+                    await self.bot.send_message(chat_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+                elif len(media_list) == 1:
+                    m = media_list[0]
+                    if m.media_type == 'photo':
+                        await self.bot.send_photo(chat_id, FSInputFile(m.file_id), caption=short_caption, parse_mode="HTML")
+                    else:
+                        await self.bot.send_video(chat_id, FSInputFile(m.file_id), caption=short_caption, parse_mode="HTML")
+                    # Matnni alohida yuborish
+                    await self.bot.send_message(chat_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+                else:
+                    media_group = []
+                    for i, m in enumerate(media_list):
+                        file = FSInputFile(m.file_id)
+                        if m.media_type == 'photo': 
+                            media_group.append(aiotypes.InputMediaPhoto(media=file, caption=short_caption if i == 0 else "", parse_mode="HTML"))
+                        else: 
+                            media_group.append(aiotypes.InputMediaVideo(media=file, caption=short_caption if i == 0 else "", parse_mode="HTML"))
+                    await self.bot.send_media_group(chat_id, media_group)
+                    await self.bot.send_message(chat_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
         except Exception as e:
             logger.error(f"Notify error: {e}")
