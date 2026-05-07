@@ -9,6 +9,10 @@ from bot_database.models import BotSettings
 
 logger = logging.getLogger(__name__)
 
+# --- BU YERGA QARANG ---
+logger.info("🚀🚀🚀 TRANSLATOR SERVICE: YANGI HTTP KOD ISHGA TUSHDI! 🚀🚀🚀")
+# -----------------------
+
 class TranslatorService:
     def __init__(self):
         # Gemini
@@ -26,9 +30,9 @@ class TranslatorService:
         # OpenAI
         self.openai_key = os.getenv("OPENAI_API_KEY")
         if self.openai_key:
-            logger.info("Translator Service: OpenAI key found. Using direct HTTP requests.")
+            logger.info("OpenAI Key yuklandi. To'g'ridan-to'g'ri HTTP ishlatiladi.")
         else:
-            logger.error("OPENAI_API_KEY not found!")
+            logger.error("OpenAI Key TOPILMADI!")
 
     async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin') -> str:
         if not text: return text
@@ -56,7 +60,7 @@ class TranslatorService:
         # 1. OpenAI (To'g'ridan-to'g'ri HTTP so'rovi bilan)
         if self.openai_key:
             try:
-                logger.info("Attempting OpenAI translation (Direct HTTP)...")
+                logger.info("OpenAI tarjimasi boshlandi (Direct HTTP)...")
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     response = await client.post(
                         "https://api.openai.com/v1/chat/completions",
@@ -77,9 +81,9 @@ class TranslatorService:
                     if response.status_code == 200:
                         data = response.json()
                         translated_result = data['choices'][0]['message']['content'].strip()
-                        logger.info("✅ SUCCESS: OpenAI translated via direct HTTP.")
+                        logger.info("✅ SUCCESS: OpenAI (HTTP) orqali tarjima qilindi.")
                     else:
-                        logger.error(f"❌ OpenAI HTTP Error {response.status_code}: {response.text}")
+                        logger.error(f"❌ OpenAI HTTP Xatosi {response.status_code}: {response.text}")
             except Exception as e:
                 logger.error(f"❌ OpenAI Exception: {str(e)}")
 
@@ -88,7 +92,7 @@ class TranslatorService:
             priority_models = [m for m in self.model_names if 'flash' in m.lower()] + self.model_names
             for m_name in priority_models:
                 try:
-                    logger.info(f"Attempting Gemini fallback with {m_name}...")
+                    logger.info(f"Gemini fallback sinab ko'rilmoqda: {m_name}...")
                     model = genai.GenerativeModel(m_name)
                     resp = await asyncio.wait_for(
                         asyncio.to_thread(model.generate_content, prompt),
@@ -96,10 +100,10 @@ class TranslatorService:
                     )
                     if resp and hasattr(resp, 'text') and resp.text:
                         translated_result = resp.text.strip()
-                        logger.info(f"⚠️ FALLBACK SUCCESS: {m_name} used.")
+                        logger.info(f"⚠️ FALLBACK SUCCESS: {m_name} ishlatildi.")
                         break
                 except Exception as ge:
-                    logger.warning(f"❌ Gemini {m_name} failed: {ge}")
+                    logger.warning(f"❌ Gemini {m_name} xatosi: {ge}")
                     continue
 
         return self.restore_emojis(translated_result or protected_text, found_emojis, target_alphabet)
