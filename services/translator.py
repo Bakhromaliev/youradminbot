@@ -103,16 +103,14 @@ class TranslatorService:
         return text
 
     def to_latin(self, text: str) -> str:
-        # Kirill (Lotin) -> Lotin (Latin)
-        # Bu yerda har bir kirill harfi o'zining lotin qarindoshiga o'tadi
         repl_map = {
             'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'j', 'з': 'z',
             'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r',
             'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'x', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'ъ': "'",
             'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya', 'ў': "o'", 'ғ': "g'", 'қ': 'q', 'ҳ': 'h',
             'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo', 'Ж': 'J', 'З': 'Z',
-            'И': 'I', 'Й', 'Y', 'К', 'K', 'Л', 'L', 'М', 'M', 'Н', 'N', 'О', 'O', 'П', 'P', 'Р', 'R',
-            'С', 'S', 'Т', 'T', 'У', 'U', 'Ф', 'F', 'Х', 'X', 'Ц', 'Ts', 'Ч', 'Ch', 'Ш', 'Sh', 'Ъ': "'",
+            'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M', 'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R',
+            'С': 'S', 'Т': 'T', 'У': 'U', 'Ф': 'F', 'Х': 'X', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Ъ': "'",
             'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya', 'Ў': "O'", 'Ғ': "G'", 'Қ': 'Q', 'Ҳ': 'H'
         }
         res = text
@@ -121,14 +119,9 @@ class TranslatorService:
         return res
 
     def to_cyrillic(self, text: str) -> str:
-        # 1. Tutuqlarni standartlash
         for a in ["’", "‘", "`", "´", "ʻ"]: text = text.replace(a, "'")
-
-        # 2. So'z boshidagi E -> Э
         text = re.sub(r'(^|[^a-zA-Z])E', r'\1Э', text)
         text = re.sub(r'(^|[^a-zA-Z])e', r'\1э', text)
-
-        # 3. Murakkab harflar (Tartib muhim!)
         complex_repl = [
             ("O'", 'Ў'), ("o'", 'ў'), ("G'", 'Ғ'), ("g'", 'ғ'),
             ("A'", 'АЪ'), ("a'", 'аъ'),
@@ -137,8 +130,6 @@ class TranslatorService:
             ('Ya', 'Я'), ('ya', 'я'), ('Ye', 'Е'), ('ye', 'е'), ('Ts', 'Ц'), ('ts', 'ц')
         ]
         for s, d in complex_repl: text = text.replace(s, d)
-
-        # 4. Yakka harflar (DIQQAT: Chapdagilar faqat LOTIN, o'ngdagilar faqat KIRILL)
         single_repl = {
             'A': 'А', 'B': 'Б', 'D': 'Д', 'F': 'Ф', 'G': 'Г', 'H': 'Ҳ', 'I': 'И', 'J': 'Ж', 'K': 'К',
             'L': 'Л', 'M': 'М', 'N': 'Н', 'O': 'О', 'P': 'П', 'Q': 'Қ', 'R': 'Р', 'S': 'С', 'T': 'Т',
@@ -148,5 +139,4 @@ class TranslatorService:
             'u': 'у', 'v': 'в', 'x': 'х', 'y': 'й', 'z': 'з', 'e': 'е', "'": 'ъ'
         }
         for s, d in single_repl.items(): text = text.replace(s, d)
-        
         return text
