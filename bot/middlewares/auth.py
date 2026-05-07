@@ -43,13 +43,23 @@ class AuthMiddleware(BaseMiddleware):
                         if state: await state.clear()
 
                 if not user:
-                    user = User(telegram_id=user_id, username=event.from_user.username, is_approved=True)
-                    if user_id == SUPER_ADMIN_ID: user.is_admin = True; user.is_vip = True
+                    user = User(
+                        telegram_id=user_id, 
+                        username=event.from_user.username, 
+                        is_approved=True,
+                        bot_language='uz'
+                    )
+                    if user_id == SUPER_ADMIN_ID:
+                        user.is_admin = True
+                        user.is_vip = True
                     session.add(user)
                     await session.commit()
+                    logger.info(f"🆕 Yangi foydalanuvchi yaratildi: {user_id}")
                 elif user_id == SUPER_ADMIN_ID and not user.is_admin:
-                    user.is_admin = True; user.is_vip = True
+                    user.is_admin = True
+                    user.is_vip = True
                     await session.commit()
+                    logger.info(f"🔑 Super Admin huquqlari yangilandi: {user_id}")
         except Exception as e:
             logger.error(f"❌ AuthMiddleware Error: {e}")
         
