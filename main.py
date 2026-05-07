@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 async def main():
+    logger.info("⏳ Render konflikti oldini olish uchun 30 soniya kutilmoqda...")
+    await asyncio.sleep(30)
+    
     # Ma'lumotlar bazasini ishga tushirish va Seeding
     await init_db()
     async with AsyncSessionLocal() as session:
