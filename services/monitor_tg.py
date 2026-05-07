@@ -161,7 +161,8 @@ class TelegramMonitor:
         chat = await msg.get_chat()
         variants = [str(chat.id)]
         if hasattr(chat, 'username') and chat.username:
-            variants.extend([chat.username, f"@{chat.username}"])
+            u = chat.username
+            variants.extend([u, f"@{u}", f"t.me/{u}", f"https://t.me/{u}"])
 
         async with AsyncSessionLocal() as session:
             stmt = select(SourceChannelLink).where(SourceChannelLink.source_channel_id.in_(variants))
@@ -212,7 +213,8 @@ class TelegramMonitor:
                 variants.append(str(chat_id_num))
                 variants.append(f"-100{str(chat_id_num).lstrip('-')}")
             if hasattr(chat, 'username') and chat.username:
-                variants.extend([chat.username, f"@{chat.username}"])
+                u = chat.username
+                variants.extend([u, f"@{u}", f"t.me/{u}", f"https://t.me/{u}"])
             
             logger.info(f"New TG channel message. Chat variants for DB lookup: {variants}")
             
