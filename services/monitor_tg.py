@@ -4,7 +4,7 @@ import os
 import re
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from bot_database.db import AsyncSessionLocal
 from bot_database.models import SourceChannelLink, OutputChannel, User, PendingPost, PostMedia
 from services.translator import TranslatorService
@@ -165,7 +165,8 @@ class TelegramMonitor:
             variants.extend([u, f"@{u}", f"t.me/{u}", f"https://t.me/{u}"])
 
         async with AsyncSessionLocal() as session:
-            stmt = select(SourceChannelLink).where(SourceChannelLink.source_channel_id.in_(variants))
+            lower_variants = [v.lower() for v in variants]
+            stmt = select(SourceChannelLink).where(func.lower(SourceChannelLink.source_channel_id).in_(lower_variants))
             result = await session.execute(stmt)
             links = result.scalars().all()
             if not links: return
@@ -219,10 +220,11 @@ class TelegramMonitor:
             logger.info(f"New TG channel message. Chat variants for DB lookup: {variants}")
             
             async with AsyncSessionLocal() as session:
-                # Barcha telegram manbalarini olib, variantlar bilan solishtirish
+                lower_variants = [v.lower() for v in variants]
+                # Barcha telegram manbalarini olib, variantlar bilan solishtirish (Case-insensitive)
                 all_links = await session.execute(
                     select(SourceChannelLink).where(
-                        SourceChannelLink.source_channel_id.in_(variants)
+                        func.lower(SourceChannelLink.source_channel_id).in_(lower_variants)
                     )
                 )
                 links = all_links.scalars().all()
