@@ -24,7 +24,6 @@ class TranslatorService:
                         self.model_names.append(p)
                 if not self.model_names and available_models: 
                     self.model_names = [available_models[0]]
-                logger.info(f"Translator Service: Gemini models: {self.model_names}")
             except Exception as e:
                 logger.error(f"Failed to list Gemini models: {e}")
         
@@ -36,22 +35,20 @@ class TranslatorService:
                 api_key=openai_key,
                 timeout=httpx.Timeout(60.0, connect=10.0)
             )
-            logger.info("Translator Service: OpenAI ChatGPT initialized.")
 
     async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin') -> str:
         if not text: return text
         
-        # 1. Emojilarni va maxsus kodlarni HIMOYALASH
-        # [[emoji_id:...]] larni tarjimadan oldin olib tashlaymiz
+        # 1. Emojilarni HIMOYALASH (Faqat belgilar bilan)
         emoji_pattern = r'\[\[emoji_id:[^\]]+\]\]'
         found_emojis = re.findall(emoji_pattern, text)
         protected_text = text
         for i, emoji_code in enumerate(found_emojis):
-            protected_text = protected_text.replace(emoji_code, f'{{E{i}}}', 1)
+            # Harf ishlatmaymiz, faqat raqam va maxsus belgi
+            protected_text = protected_text.replace(emoji_code, f'____{i}____', 1)
 
         # Faqat harflar bor matnlarni tarjima qilamiz
         if not re.search(r'[a-zA-Zа-яА-ЯёЁ]', protected_text):
-            # Agar matnda tarjima qiladigan narsa bo'lmasa, emojilarni qaytarib beramiz
             return self.restore_emojis(protected_text, found_emojis, target_alphabet)
 
         lang_map = {'uz': 'Uzbek', 'ru': 'Russian', 'en': 'English'}
@@ -64,17 +61,17 @@ class TranslatorService:
             f"MAJBURIY ALIFBO: Faqat {alphabet_name} ishlating. "
             f"Hech qanday aralash yozuv bo'lmasin.\n\n"
             f"QOIDALAR:\n"
-            f"1. Tarjimani tushunarli va ravon qiling. Sport uslubida bo'lsin.\n"
+            f"1. Tarjimani tushunarli va ravon qiling. Sport muxbiri uslubida bo'lsin.\n"
             f"2. Futbol atamalarini to'g'ri ishlating.\n"
-            f"3. {{E0}}, {{E1}} kabi kodlarni o'zgartirmang, ularni joyida qoldiring.\n"
+            f"3. ____0____, ____1____ kabi kodlarni o'zgartirmang, ularni joyida qoldiring.\n"
             f"4. Linklar va reklamalarni o'chiring.\n"
             f"5. Faqat tayyor tarjima matnini qaytaring.\n\n"
             f"MATN:\n{protected_text}"
         )
 
-        translated_result = protected_text # Fallback
+        translated_result = protected_text
 
-        # ChatGPT orqali tarjima
+        # ChatGPT
         if self.openai_client:
             try:
                 response = await self.openai_client.chat.completions.create(
@@ -95,24 +92,23 @@ class TranslatorService:
                         )
                         if resp and hasattr(resp, 'text') and resp.text:
                             translated_result = resp.text.strip()
-                    except Exception as ge:
-                        logger.warning(f"Gemini fallback failed: {ge}")
+                    except Exception: pass
 
         # 2. Emojilarni va alifboni QAYTARISH
         return self.restore_emojis(translated_result, found_emojis, target_alphabet)
 
     def restore_emojis(self, text: str, original_emojis: list, target_alphabet: str) -> str:
-        """Berkitilgan emojilarni qaytaradi va alifboni to'g'irlaydi"""
         # Alifboni o'girish
         if target_alphabet == 'cyrillic':
             text = self.to_cyrillic(text)
         elif target_alphabet == 'latin':
             text = self.to_latin(text)
             
-        # Emojilarni joy-joyiga qo'yish
+        # Emojilarni qaytarish (Literal replace)
         for i, emoji_code in enumerate(original_emojis):
-            # Ba'zan ChatGPT {E0} ni (E0) yoki shunchaki E0 qilib qo'yishi mumkin
-            text = re.sub(rf'\{{?E{i}\}}?', emoji_code, text)
+            placeholder = f'_____{i}_____' # Ba'zan alifbo o'girishda ___ o'zgarishi mumkin
+            # Biz barcha ehtimollarni tekshiramiz
+            text = text.replace(f'____{i}____', emoji_code)
             
         return text
 
@@ -154,7 +150,7 @@ class TranslatorService:
             ('Ch', 'Ч'), ('ch', 'ч'), ('CH', 'Ч'),
             ('Yo', 'Ё'), ('yo', 'ё'), ('YO', 'Ё'),
             ('Yu', 'Ю'), ('yu', 'ю'), ('YU', 'Ю'),
-            ('Ya', 'Я'), ('ya', 'я'), ('YA', 'Ya'),
+            ('Ya', 'Я'), ('ya', 'я'), ('YA', 'Я'),
             ('Ye', 'Е'), ('ye', 'е'), ('YE', 'Е'),
             ('Ts', 'Ц'), ('ts', 'ц'),
             ('A', 'А'), ('B', 'Б'), ('D', 'Д'), ('E', 'Е'), ('F', 'Ф'),
