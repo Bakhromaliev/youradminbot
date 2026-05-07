@@ -31,6 +31,11 @@ class TranslatorService:
     async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin') -> str:
         if not text: return text
         
+        # AQLLI FILTR: Agar matnda harflar bo'lmasa (faqat emoji, raqam yoki belgilar), AI'ga yubormaymiz
+        if not re.search(r'[a-zA-Zа-яА-ЯёЁўЎғҒқҚҳҲ]', text):
+            logger.info("Matnda harflar yo'q. AI'ga yubormasdan qaytarildi.")
+            return text
+
         # Emojilarni HIMOYALASH
         emoji_pattern = r'\[\[emoji_id:[^\]]+\]\]'
         found_emojis = re.findall(emoji_pattern, text)
@@ -42,14 +47,11 @@ class TranslatorService:
         target_name = lang_map.get(target_lang, 'Uzbek')
         alphabet_name = "LATIN SCRIPT" if target_alphabet == 'latin' else "CYRILLIC SCRIPT"
 
-        # MAXSUS KO'RSATMA (ISMLAR VA TALAF FUZ UCHUN)
         system_instruction = (
-            "Siz O'zbek tilida sport (asosan futbol) mavzusida yozadigan professional sport jurnalistisiz.\n"
+            "Siz O'zbek tilida sport mavzusida yozadigan professional sport jurnalistisiz.\n"
             "ISPANCHA ISMLARNI TO'G'RI TARJIMA QILING:\n"
-            "- 'Carvajal' ni har doim 'Karvaxal' deb tarjima qiling (Sarvajal emas).\n"
-            "- 'Juan' -> 'Xuan', 'Jose' -> 'Xose', 'Jesus' -> 'Xesus'.\n"
-            "- Ispancha 'J' harfini 'X' deb, 'C' harfini 'K' deb o'qing (agar u 'K' tovushini bersa).\n"
-            "- Matn sport muxlislari uchun hayajonli va professional bo'lishi kerak."
+            "- 'Carvajal' -> 'Karvaxal', 'Juan' -> 'Xuan', 'Jose' -> 'Xose'.\n"
+            "Matnni hayajonli va professional qiling. Agar matn juda qisqa bo'lsa ham, faqat tarjimasini bering, o'zingizdan ortiqcha gap qo'shmang."
         )
 
         prompt = (
@@ -60,7 +62,7 @@ class TranslatorService:
 
         translated_result = None
 
-        # 1. OpenAI (Tozalangan kalit bilan)
+        # 1. OpenAI
         if self.openai_key:
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
@@ -162,7 +164,7 @@ class TranslatorService:
             ('Q', 'Қ'), ('R', 'Р'), ('S', 'С'), ('T', 'Т'), ('U', 'У'),
             ('V', 'В'), ('X', 'Х'), ('Y', 'Й'), ('Z', 'З'),
             ('a', 'а'), ('b', 'б'), ('d', 'д'), ('e', 'е'), ('f', 'ф'),
-            ('g', 'г'), ('h', 'ҳ'), ('i', ' i'), ('j', 'ж'), ('k', 'к'),
+            ('g', 'г'), ('h', 'ҳ'), ('i', 'и'), ('j', 'ж'), ('k', 'к'),
             ('l', 'л'), ('m', 'м'), ('n', 'н'), ('o', 'о'), ('p', 'п'),
             ('q', 'қ'), ('r', 'р'), ('s', 'с'), ('t', 'т'), ('u', 'у'),
             ('v', 'в'), ('x', 'х'), ('y', 'й'), ('z', 'з'),
