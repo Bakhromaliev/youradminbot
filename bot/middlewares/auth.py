@@ -1,4 +1,5 @@
 import os
+import logging
 from typing import Any, Awaitable, Callable, Dict
 from aiogram import BaseMiddleware, types
 from sqlalchemy import select
@@ -8,6 +9,7 @@ from bot.utils.texts import get_text
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 SUPER_ADMIN_ID = int(os.getenv("ADMIN_ID", "1400240097"))
+logger = logging.getLogger(__name__)
 
 class AuthMiddleware(BaseMiddleware):
     async def __call__(
