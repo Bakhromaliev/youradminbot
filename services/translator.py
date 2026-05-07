@@ -3,7 +3,7 @@ import logging
 import asyncio
 import re
 import google.generativeai as genai
-from openai import AsyncOpenAI
+from openai import OpenAI as SyncOpenAI # Sinxron client barqarorroq bo'lishi mumkin
 from bot_database.models import BotSettings
 import httpx
 
@@ -27,16 +27,12 @@ class TranslatorService:
             except Exception as e:
                 logger.error(f"Failed to list Gemini models: {e}")
         
-        # OpenAI sozlamalari (HTTP/1.1 ga majburlaymiz, aloqa barqaror bo'lishi uchun)
-        self.openai_client = None
-        openai_key = os.getenv("OPENAI_API_KEY")
-        if openai_key:
-            self.openai_client = AsyncOpenAI(
-                api_key=openai_key,
-                timeout=httpx.Timeout(60.0, connect=15.0),
-                http_client=httpx.AsyncClient(http1=True) # Barqarorlik uchun HTTP/1.1
-            )
-            logger.info("Translator Service: OpenAI ChatGPT initialized (HTTP/1.1).")
+        # OpenAI sozlamalari
+        self.openai_key = os.getenv("OPENAI_API_KEY")
+        if self.openai_key:
+            # Sinxron clientni thread ichida ishlatish barqarorroq
+            self.sync_openai = SyncOpenAI(api_key=self.openai_key, timeout=45.0)
+            logger.info("Translator Service: OpenAI (Sync) initialized.")
 
     async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin') -> str:
         if not text: return text
@@ -58,8 +54,7 @@ class TranslatorService:
         prompt = (
             f"Siz O'zbek tilida yozadigan tajribali sport muxbirisiz.\n"
             f"Quyidagi xabarni {target_name} tiliga tarjima qiling.\n\n"
-            f"MAJBURIY ALIFBO: Faqat {alphabet_name} ishlating. "
-            f"Hech qanday aralash yozuv bo'lmasin.\n\n"
+            f"MAJBURIY ALIFBO: Faqat {alphabet_name} ishlating.\n\n"
             f"QOIDALAR:\n"
             f"1. Tarjimani tushunarli va ravon qiling. Sport muxbiri uslubida bo'lsin.\n"
             f"2. Futbol atamalarini to'g'ri ishlating.\n"
@@ -71,10 +66,12 @@ class TranslatorService:
 
         translated_result = None
 
-        # ChatGPT (Primary)
-        if self.openai_client:
+        # ChatGPT (Primary) - Thread ichida ishga tushiramiz
+        if self.openai_key:
             try:
-                response = await self.openai_client.chat.completions.create(
+                # asyncio.to_thread sinxron kutubxonani async muhitda ishlatishga yordam beradi
+                response = await asyncio.to_thread(
+                    self.sync_openai.chat.completions.create,
                     model="gpt-4o-mini",
                     messages=[{"role": "system", "content": "Siz sport muxbirisiz."}, {"role": "user", "content": prompt}],
                     temperature=0.3
@@ -101,7 +98,7 @@ class TranslatorService:
 
         if not translated_result:
             translated_result = protected_text
-            logger.warning("❗ WARNING: All translation engines failed. Using original text.")
+            logger.warning("❗ WARNING: All engines failed.")
 
         return self.restore_emojis(translated_result, found_emojis, target_alphabet)
 
