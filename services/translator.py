@@ -18,20 +18,21 @@ class TranslatorService:
         if api_key:
             try:
                 genai.configure(api_key=api_key)
-                available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                self.model_names = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                logger.info(f"Gemini models loaded: {len(self.model_names)}")
+                # Modellar ro'yxatini aniq olamiz
+                models = genai.list_models()
+                for m in models:
+                    if 'generateContent' in m.supported_generation_methods:
+                        self.model_names.append(m.name)
+                logger.info(f"Translator Service: Gemini models found: {self.model_names}")
             except Exception as e:
                 logger.error(f"Gemini init error: {e}")
         
         # OpenAI sozlamalari
         self.openai_key = os.getenv("OPENAI_API_KEY")
         if self.openai_key:
-            # Key borligini tekshiramiz (qiymatini ko'rsatmasdan)
-            logger.info(f"OpenAI Key found (length: {len(self.openai_key)})")
-            self.sync_openai = SyncOpenAI(api_key=self.openai_key, timeout=60.0)
-        else:
-            logger.error("CRITICAL: OPENAI_API_KEY NOT FOUND IN ENVIRONMENT!")
+            # Sync client bilan oddiyroq ulanish
+            self.sync_openai = SyncOpenAI(api_key=self.openai_key, timeout=45.0)
+            logger.info("Translator Service: OpenAI (Sync) initialized.")
 
     async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin') -> str:
         if not text: return text
@@ -56,10 +57,9 @@ class TranslatorService:
 
         translated_result = None
 
-        # ChatGPT (Primary)
+        # 1. ChatGPT orqali tarjima
         if self.openai_key:
             try:
-                logger.info("Attempting OpenAI translation...")
                 response = await asyncio.to_thread(
                     self.sync_openai.chat.completions.create,
                     model="gpt-4o-mini",
@@ -68,26 +68,29 @@ class TranslatorService:
                 )
                 translated_result = response.choices[0].message.content.strip()
                 if translated_result:
-                    logger.info("✅ SUCCESS: ChatGPT translated successfully.")
+                    logger.info("✅ SUCCESS: ChatGPT used.")
             except Exception as e:
-                # BU YERDA ANIQLIK KIRITAMIZ:
-                detailed_error = traceback.format_exc()
-                logger.error(f"❌ DETAILED OPENAI ERROR:\n{detailed_error}")
+                logger.error(f"❌ OpenAI error: {str(e)}")
 
-        # Gemini (Fallback)
+        # 2. Gemini Fallback (Agar OpenAI o'xshamasa)
         if not translated_result and self.model_names:
-            try:
-                logger.info("Attempting Gemini fallback...")
-                model = genai.GenerativeModel('gemini-1.5-flash')
-                resp = await asyncio.wait_for(
-                    asyncio.to_thread(model.generate_content, prompt),
-                    timeout=45.0
-                )
-                if resp and hasattr(resp, 'text') and resp.text:
-                    translated_result = resp.text.strip()
-                    logger.info("⚠️ FALLBACK: Gemini translated successfully.")
-            except Exception as ge:
-                logger.warning(f"❌ Gemini fallback failed: {ge}")
+            # Avval flash modelni sinaymiz, keyin boshqalarini
+            priority_models = [m for m in self.model_names if 'flash' in m.lower()] + self.model_names
+            for m_name in priority_models:
+                try:
+                    logger.info(f"Attempting Gemini fallback with {m_name}...")
+                    model = genai.GenerativeModel(m_name)
+                    resp = await asyncio.wait_for(
+                        asyncio.to_thread(model.generate_content, prompt),
+                        timeout=30.0
+                    )
+                    if resp and hasattr(resp, 'text') and resp.text:
+                        translated_result = resp.text.strip()
+                        logger.info(f"⚠️ FALLBACK SUCCESS: {m_name} used.")
+                        break
+                except Exception as ge:
+                    logger.warning(f"❌ Gemini {m_name} failed: {ge}")
+                    continue
 
         return self.restore_emojis(translated_result or protected_text, found_emojis, target_alphabet)
 
