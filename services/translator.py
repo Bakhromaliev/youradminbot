@@ -31,9 +31,8 @@ class TranslatorService:
     async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin') -> str:
         if not text: return text
         
-        # AQLLI FILTR: Agar matnda harflar bo'lmasa (faqat emoji, raqam yoki belgilar), AI'ga yubormaymiz
+        # AQLLI FILTR
         if not re.search(r'[a-zA-Zа-яА-ЯёЁўЎғҒқҚҳҲ]', text):
-            logger.info("Matnda harflar yo'q. AI'ga yubormasdan qaytarildi.")
             return text
 
         # Emojilarni HIMOYALASH
@@ -47,15 +46,19 @@ class TranslatorService:
         target_name = lang_map.get(target_lang, 'Uzbek')
         alphabet_name = "LATIN SCRIPT" if target_alphabet == 'latin' else "CYRILLIC SCRIPT"
 
+        # YANGILANGAN TABIIY USLUB KO'RSATMASI
         system_instruction = (
-            "Siz O'zbek tilida sport mavzusida yozadigan professional sport jurnalistisiz.\n"
-            "ISPANCHA ISMLARNI TO'G'RI TARJIMA QILING:\n"
-            "- 'Carvajal' -> 'Karvaxal', 'Juan' -> 'Xuan', 'Jose' -> 'Xose'.\n"
-            "Matnni hayajonli va professional qiling. Agar matn juda qisqa bo'lsa ham, faqat tarjimasini bering, o'zingizdan ortiqcha gap qo'shmang."
+            "Siz mashhur o'zbek sport blogerisiz. Vazifangiz futbol yangiliklarini o'zbek tiliga o'ta tabiiy va jonli tarjima qilish.\n"
+            "USLUB QOIDALARI:\n"
+            "- 'Kitobiy' yoki o'ta adabiy tildan qoching. Xuddi telegram kanaldagi bloger yozgandek yozing.\n"
+            "- Gaplar mazmuni bir-biriga mantiqan bog'liq bo'lsin, sun'iy tuyulmasin.\n"
+            "- Ispancha ismlarni o'zbekcha talaffuzga moslang: 'Carvajal' -> 'Karvaxal', 'Juan' -> 'Xuan'.\n"
+            "- O'zbek sport muxlislari orasida ommalashgan iboralardan foydalaning (masalan: 'daxshatli o'yin', 'gol urishga yaqin keldi', 'transfer masalasi hal bo'ldi').\n"
+            "- Faqat tarjimani bering, o'zingizdan 'mana tarjima' kabi gaplarni qo'shmang."
         )
 
         prompt = (
-            f"Quyidagi xabarni {target_name} tiliga tarjima qiling.\n\n"
+            f"Quyidagi xabarni {target_name} tiliga sport blogeri uslubida tarjima qiling.\n\n"
             f"MAJBURIY ALIFBO: Faqat {alphabet_name} ishlating.\n"
             f"MATN:\n{protected_text}"
         )
@@ -78,7 +81,7 @@ class TranslatorService:
                                 {"role": "system", "content": system_instruction},
                                 {"role": "user", "content": prompt}
                             ],
-                            "temperature": 0.3
+                            "temperature": 0.4 # Bir oz kreativlik uchun haroratni oshirdik
                         }
                     )
                     
