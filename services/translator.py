@@ -9,32 +9,24 @@ from bot_database.models import BotSettings
 
 logger = logging.getLogger(__name__)
 
-logger.info("🚀🚀🚀 TRANSLATOR SERVICE: KALIT TOZALASH TIZIMI ISHGA TUSHDI! 🚀🚀🚀")
-
 class TranslatorService:
     def __init__(self):
         # Gemini
         api_key = os.getenv("GEMINI_API_KEY")
-        if api_key:
-            api_key = api_key.strip() # Tozalash
+        if api_key: api_key = api_key.strip()
         self.model_names = []
         if api_key:
             try:
                 genai.configure(api_key=api_key)
                 models = genai.list_models()
                 self.model_names = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
-                logger.info(f"Gemini models: {len(self.model_names)} ta model topildi.")
+                logger.info(f"Gemini models found: {len(self.model_names)}")
             except Exception as e:
                 logger.error(f"Gemini init error: {e}")
         
         # OpenAI
         raw_key = os.getenv("OPENAI_API_KEY")
-        self.openai_key = raw_key.strip() if raw_key else None # OXIRIDAGI ENTER/SPACE LARNI O'CHIRISH
-        
-        if self.openai_key:
-            logger.info(f"OpenAI Key yuklandi va tozalandi (Uzunligi: {len(self.openai_key)}).")
-        else:
-            logger.error("OpenAI Key TOPILMADI!")
+        self.openai_key = raw_key.strip() if raw_key else None
 
     async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin') -> str:
         if not text: return text
@@ -50,8 +42,17 @@ class TranslatorService:
         target_name = lang_map.get(target_lang, 'Uzbek')
         alphabet_name = "LATIN SCRIPT" if target_alphabet == 'latin' else "CYRILLIC SCRIPT"
 
+        # MAXSUS KO'RSATMA (ISMLAR VA TALAF FUZ UCHUN)
+        system_instruction = (
+            "Siz O'zbek tilida sport (asosan futbol) mavzusida yozadigan professional sport jurnalistisiz.\n"
+            "ISPANCHA ISMLARNI TO'G'RI TARJIMA QILING:\n"
+            "- 'Carvajal' ni har doim 'Karvaxal' deb tarjima qiling (Sarvajal emas).\n"
+            "- 'Juan' -> 'Xuan', 'Jose' -> 'Xose', 'Jesus' -> 'Xesus'.\n"
+            "- Ispancha 'J' harfini 'X' deb, 'C' harfini 'K' deb o'qing (agar u 'K' tovushini bersa).\n"
+            "- Matn sport muxlislari uchun hayajonli va professional bo'lishi kerak."
+        )
+
         prompt = (
-            f"Siz O'zbek tilida yozadigan tajribali sport muxbirisiz.\n"
             f"Quyidagi xabarni {target_name} tiliga tarjima qiling.\n\n"
             f"MAJBURIY ALIFBO: Faqat {alphabet_name} ishlating.\n"
             f"MATN:\n{protected_text}"
@@ -72,7 +73,7 @@ class TranslatorService:
                         json={
                             "model": "gpt-4o-mini",
                             "messages": [
-                                {"role": "system", "content": "Siz sport muxbirisiz."},
+                                {"role": "system", "content": system_instruction},
                                 {"role": "user", "content": prompt}
                             ],
                             "temperature": 0.3
@@ -82,9 +83,9 @@ class TranslatorService:
                     if response.status_code == 200:
                         data = response.json()
                         translated_result = data['choices'][0]['message']['content'].strip()
-                        logger.info("✅ SUCCESS: ChatGPT (OpenAI) orqali tarjima qilindi.")
+                        logger.info("✅ SUCCESS: ChatGPT used.")
                     else:
-                        logger.error(f"❌ OpenAI API Xatosi {response.status_code}: {response.text}")
+                        logger.error(f"❌ OpenAI API Error {response.status_code}: {response.text}")
             except Exception as e:
                 logger.error(f"❌ OpenAI Exception: {str(e)}")
 
@@ -93,17 +94,17 @@ class TranslatorService:
             priority_models = [m for m in self.model_names if 'flash' in m.lower()] + self.model_names
             for m_name in priority_models:
                 try:
-                    model = genai.GenerativeModel(m_name)
+                    model = genai.GenerativeModel(m_name, system_instruction=system_instruction)
                     resp = await asyncio.wait_for(
                         asyncio.to_thread(model.generate_content, prompt),
                         timeout=35.0
                     )
                     if resp and hasattr(resp, 'text') and resp.text:
                         translated_result = resp.text.strip()
-                        logger.info(f"⚠️ FALLBACK SUCCESS: {m_name} ishlatildi.")
+                        logger.info(f"⚠️ FALLBACK SUCCESS: {m_name} used.")
                         break
                 except Exception as ge:
-                    logger.warning(f"❌ Gemini {m_name} xatosi: {ge}")
+                    logger.warning(f"❌ Gemini {m_name} failed: {ge}")
                     continue
 
         return self.restore_emojis(translated_result or protected_text, found_emojis, target_alphabet)
@@ -161,7 +162,7 @@ class TranslatorService:
             ('Q', 'Қ'), ('R', 'Р'), ('S', 'С'), ('T', 'Т'), ('U', 'У'),
             ('V', 'В'), ('X', 'Х'), ('Y', 'Й'), ('Z', 'З'),
             ('a', 'а'), ('b', 'б'), ('d', 'д'), ('e', 'е'), ('f', 'ф'),
-            ('g', 'г'), ('h', 'ҳ'), ('i', 'и'), ('j', 'ж'), ('k', 'к'),
+            ('g', 'г'), ('h', 'ҳ'), ('i', ' i'), ('j', 'ж'), ('k', 'к'),
             ('l', 'л'), ('m', 'м'), ('n', 'н'), ('o', 'о'), ('p', 'п'),
             ('q', 'қ'), ('r', 'р'), ('s', 'с'), ('t', 'т'), ('u', 'у'),
             ('v', 'в'), ('x', 'х'), ('y', 'й'), ('z', 'з'),
