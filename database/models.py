@@ -6,7 +6,7 @@ from datetime import datetime
 Base = declarative_base()
 
 class User(Base):
-    __tablename__ = "users"
+    __tablename__ = "bot_users"
     id = Column(Integer, primary_key=True)
     telegram_id = Column(Integer, unique=True)
     username = Column(String)
@@ -20,9 +20,9 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Source(Base):
-    __tablename__ = "sources"
+    __tablename__ = "bot_sources"
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Integer, ForeignKey("bot_users.id"))
     source_id = Column(String) # @username or ID
     source_name = Column(String)
     source_type = Column(String) # telegram, twitter
@@ -30,9 +30,9 @@ class Source(Base):
     links = relationship("SourceChannelLink", back_populates="source", cascade="all, delete-orphan")
 
 class OutputChannel(Base):
-    __tablename__ = "output_channels"
+    __tablename__ = "bot_output_channels"
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Integer, ForeignKey("bot_users.id"))
     channel_id = Column(String)
     channel_name = Column(String)
     target_lang = Column(String, default="uz")
@@ -44,21 +44,21 @@ class OutputChannel(Base):
     links = relationship("SourceChannelLink", back_populates="output_channel")
 
 class SourceChannelLink(Base):
-    __tablename__ = "source_channel_links"
+    __tablename__ = "bot_source_links"
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    source_id = Column(Integer, ForeignKey("sources.id")) # Source ID ga bog'lanadi
+    user_id = Column(Integer, ForeignKey("bot_users.id"))
+    source_id = Column(Integer, ForeignKey("bot_sources.id")) # Source ID ga bog'lanadi
     source_channel_id = Column(String) # Monitor uchun @username
-    channel_db_id = Column(Integer, ForeignKey("output_channels.id"))
+    channel_db_id = Column(Integer, ForeignKey("bot_output_channels.id"))
     
     source = relationship("Source", back_populates="links")
     output_channel = relationship("OutputChannel", back_populates="links")
 
 class PendingPost(Base):
-    __tablename__ = "pending_posts"
+    __tablename__ = "bot_pending_posts"
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    link_id = Column(Integer, ForeignKey("source_channel_links.id"))
+    user_id = Column(Integer, ForeignKey("bot_users.id"))
+    link_id = Column(Integer, ForeignKey("bot_source_links.id"))
     source_type = Column(String)
     original_text = Column(Text)
     translated_text = Column(Text)
@@ -70,16 +70,16 @@ class PendingPost(Base):
     media = relationship("PostMedia", back_populates="post", cascade="all, delete-orphan")
 
 class PostMedia(Base):
-    __tablename__ = "post_media"
+    __tablename__ = "bot_post_media"
     id = Column(Integer, primary_key=True)
-    post_id = Column(Integer, ForeignKey("pending_posts.id"))
+    post_id = Column(Integer, ForeignKey("bot_pending_posts.id"))
     file_id = Column(String)
     media_type = Column(String)
     
     post = relationship("PendingPost", back_populates="media")
     
 class BotSettings(Base):
-    __tablename__ = "bot_settings"
+    __tablename__ = "bot_configs"
     id = Column(Integer, primary_key=True)
     card_number = Column(String, default="8600 0000 0000 0000")
     card_owner = Column(String, default="Falonchi Pistonchiyev")
