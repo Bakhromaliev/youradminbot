@@ -167,13 +167,21 @@ class TelegramMonitor:
         
         msg = messages[0]
         chat = await msg.get_chat()
-        variants = [str(chat.id)]
-        if hasattr(chat, 'username') and chat.username:
-            u = chat.username
-            variants.extend([u, f"@{u}", f"t.me/{u}", f"https://t.me/{u}"])
+        chat_id = chat.id
+        username = getattr(chat, 'username', '')
+        
+        # Qidiruv variantlarini ko'paytiramiz (link, @username, va h.k.)
+        variants = [
+            str(chat_id), 
+            f"-100{str(chat_id).lstrip('-')}", 
+            username, 
+            f"@{username}", 
+            f"t.me/{username}", 
+            f"https://t.me/{username}"
+        ]
 
         async with AsyncSessionLocal() as session:
-            lower_variants = [v.lower() for v in variants]
+            lower_variants = [v.lower() for v in variants if v]
             stmt = select(SourceChannelLink).where(func.lower(SourceChannelLink.source_channel_id).in_(lower_variants))
             result = await session.execute(stmt)
             links = result.scalars().all()
