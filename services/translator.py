@@ -43,14 +43,12 @@ class TranslatorService:
 
         lang_map = {'uz': 'Uzbek', 'ru': 'Russian', 'en': 'English'}
         target_name = lang_map.get(target_lang, 'Uzbek')
-        alphabet_name = "LATIN SCRIPT" if target_alphabet == 'latin' else "CYRILLIC SCRIPT"
 
         system_instruction = (
-            "Siz mashhur o'zbek sport blogerisiz. Vazifangiz futbol yangiliklarini o'zbek tiliga o'ta tabiiy va jonli tarjima qilish.\n"
-            "USLUB QOIDALARI:\n"
-            "- Kitobiy tildan qoching. Telegram kanaldagi kabi yozing.\n"
-            "- Ispancha ismlar: 'Carvajal' -> 'Karvaxal', 'Juan' -> 'Xuan'.\n"
-            "- MAJBURIY: Faqat lotin harflarida javob bering."
+            "Siz mashhur o'zbek sport blogerisiz. Futbol yangiliklarini o'ta tabiiy tarjima qiling.\n"
+            "USLUB: Telegram kanaldagi kabi jonli til.\n"
+            "ISMLAR: 'Carvajal' -> 'Karvaxal', 'Juan' -> 'Xuan'.\n"
+            "MAJBURIY: Faqat lotin alifbosida javob bering."
         )
 
         prompt = (
@@ -117,6 +115,7 @@ class TranslatorService:
         return text
 
     def to_latin(self, text: str) -> str:
+        # Kirilldan lotinga o'girish (to'liq ro'yxat)
         replacements = [
             ('ш', 'sh'), ('Ш', 'Sh'), ('ч', 'ch'), ('Ч', 'Ch'),
             ('ё', 'yo'), ('Ё', 'Yo'), ('ю', 'yu'), ('Ю', 'Yu'),
@@ -124,16 +123,16 @@ class TranslatorService:
             ('ў', "o'"), ('Ў', "O'"), ('ғ', "g'"), ('Ғ', "G'"),
             ('қ', 'q'),  ('Қ', 'Q'),  ('ҳ', 'h'),  ('Ҳ', 'H'),
             ('аъ', "a'"), ('АЪ', "A'"), ('ъ', "'"), ('Ъ', "'"), ('ь', ''),
+            ('а', 'a'), ('б', 'b'), ('в', 'v'), ('г', 'g'), ('д', 'd'),
+            ('е', 'e'), ('з', 'z'), ('и', 'i'), ('й', 'y'), ('к', 'k'),
+            ('л', 'l'), ('м', 'm'), ('н', 'n'), ('о', 'o'), ('п', 'p'),
+            ('р', 'r'), ('с', 's'), ('т', 't'), ('у', 'u'), ('ф', 'f'),
+            ('х', 'x'), ('ц', 'ts'),
             ('А', 'A'), ('Б', 'B'), ('В', 'V'), ('Г', 'G'), ('Д', 'D'),
             ('Е', 'E'), ('З', 'Z'), ('И', 'I'), ('Й', 'Y'), ('К', 'K'),
             ('Л', 'L'), ('М', 'M'), ('Н', 'N'), ('О', 'O'), ('П', 'P'),
             ('Р', 'R'), ('С', 'S'), ('Т', 'T'), ('У', 'U'), ('Ф', 'F'),
-            ('Х', 'X'), ('Ц', 'Ts'),
-            ('а', 'a'), ('б', 'b'), ('в', 'v'), ('г', 'g'), ('д', 'd'),
-            ('е', 'e'), ('з', 'z'), ('и', 'i'), ('й', 'y'), ('k', 'k'),
-            ('л', 'l'), ('м', 'm'), ('n', 'n'), ('o', 'o'), ('p', 'p'),
-            ('r', 'r'), ('s', 's'), ('t', 't'), ('u', 'u'), ('f', 'f'),
-            ('x', 'x'), ('ts', 'ts'),
+            ('Х', 'X'), ('Ц', 'Ts')
         ]
         res = text
         for src, dst in replacements:
@@ -141,37 +140,42 @@ class TranslatorService:
         return res
 
     def to_cyrillic(self, text: str) -> str:
-        # Har xil turdagi tutuq belgilarini bitta standartga keltirish
+        # Lotindan kirillga o'girish (Juda diqqat bilan tuzilgan ro'yxat)
+        
+        # 1. Tutuq belgilarini standartlash
         for apostrophe in ["’", "‘", "`", "´", "ʻ"]:
             text = text.replace(apostrophe, "'")
 
-        # 1. So'z boshidagi yoki unlidan keyingi 'E' ni 'Э' ga o'tkazish
-        text = re.sub(r'(^|[^a-zA-Z0-9])E', r'\1Э', text)
-        text = re.sub(r'(^|[^a-zA-Z0-9])e', r'\1э', text)
-        
-        res = text
+        # 2. Maxsus holat: So'z boshidagi 'E' -> 'Э'
+        text = re.sub(r'(^|[^a-zA-Z])E', r'\1Э', text)
+        text = re.sub(r'(^|[^a-zA-Z])e', r'\1э', text)
+
+        # 3. Asosiy almashtirishlar (tartib muhim!)
         replacements = [
             ("O'", 'Ў'), ("o'", 'ў'), ("G'", 'Ғ'), ("g'", 'ғ'),
             ("A'", 'АЪ'), ("a'", 'аъ'),
-            ('Sh', 'Ш'), ('sh', 'ш'), ('SH', 'Ш'),
-            ('Ch', 'Ч'), ('ch', 'ч'), ('CH', 'Ч'),
-            ('Yo', 'Ё'), ('yo', 'ё'), ('YO', 'Ё'),
-            ('Yu', 'Ю'), ('yu', 'ю'), ('YU', 'Ю'),
-            ('Ya', 'Я'), ('ya', 'я'), ('YA', 'Я'),
-            ('Ye', 'Е'), ('ye', 'е'), ('YE', 'Е'),
+            ('Sh', 'Ш'), ('sh', 'ш'),
+            ('Ch', 'Ч'), ('ch', 'ч'),
+            ('Yo', 'Ё'), ('yo', 'ё'),
+            ('Yu', 'Ю'), ('yu', 'ю'),
+            ('Ya', 'Я'), ('ya', 'я'),
+            ('Ye', 'Е'), ('ye', 'е'),
             ('Ts', 'Ц'), ('ts', 'ц'),
-            ('A', 'А'), ('B', 'Б'), ('D', 'Д'), ('E', 'Е'), ('F', 'Ф'),
-            ('G', 'Г'), ('H', 'Ҳ'), ('I', 'И'), ('J', 'Ж'), ('K', 'К'),
-            ('L', 'Л'), ('M', 'М'), ('N', 'Н'), ('O', 'О'), ('P', 'П'),
-            ('Q', 'Қ'), ('R', 'Р'), ('S', 'С'), ('T', 'Т'), ('U', 'У'),
-            ('V', 'В'), ('X', 'Х'), ('Y', 'Й'), ('Z', 'З'),
-            ('а', 'а'), ('б', 'б'), ('д', 'д'), ('е', 'е'), ('ф', 'ф'),
-            ('г', 'г'), ('ҳ', 'ҳ'), ('и', 'и'), ('ж', 'ж'), ('к', 'к'),
-            ('л', 'л'), ('м', 'м'), ('н', 'н'), ('о', 'о'), ('п', 'п'),
-            ('қ', 'қ'), ('r', 'р'), ('s', 'с'), ('t', 'т'), ('u', 'у'),
-            ('v', 'в'), ('x', 'х'), ('y', 'й'), ('z', 'з'),
-            ("'", 'ъ'),
+            # Yakka harflar
+            ('A', 'А'), ('B', 'Б'), ('D', 'Д'), ('F', 'Ф'), ('G', 'Г'),
+            ('H', 'Ҳ'), ('I', 'И'), ('J', 'Ж'), ('K', 'К'), ('L', 'Л'),
+            ('M', 'М'), ('N', 'Н'), ('O', 'О'), ('P', 'П'), ('Q', 'Қ'),
+            ('R', 'Р'), ('S', 'С'), ('T', 'Т'), ('U', 'У'), ('V', 'В'),
+            ('X', 'Х'), ('Y', 'Й'), ('Z', 'З'), ('E', 'Е'),
+            ('a', 'а'), ('b', 'б'), ('d', 'д'), ('f', 'ф'), ('g', 'г'),
+            ('h', 'ҳ'), ('i', 'и'), ('j', 'ж'), ('k', 'к'), ('l', 'л'),
+            ('m', 'м'), ('n', 'н'), ('o', 'о'), ('p', 'п'), ('q', 'қ'),
+            ('r', 'р'), ('s', 'с'), ('t', 'т'), ('u', 'у'), ('v', 'в'),
+            ('x', 'х'), ('y', 'й'), ('z', 'з'), ('e', 'е'),
+            ("'", 'ъ')
         ]
+        
+        res = text
         for src, dst in replacements:
             res = res.replace(src, dst)
         return res
