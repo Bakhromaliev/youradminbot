@@ -28,46 +28,31 @@ class TranslatorService:
             except Exception as e:
                 logger.error(f"Failed to list Gemini models: {e}")
         
-        # OpenAI sozlamalari (Timeout qo'shildi)
+        # OpenAI sozlamalari
         self.openai_client = None
         openai_key = os.getenv("OPENAI_API_KEY")
         if openai_key:
-            # Uzun matnlar uchun timeout-ni 60 soniyaga oshiramiz
             self.openai_client = AsyncOpenAI(
                 api_key=openai_key,
                 timeout=httpx.Timeout(60.0, connect=10.0)
             )
-            logger.info("Translator Service: OpenAI ChatGPT initialized with extended timeout.")
-
-    def post_process(self, result: str, target_alphabet: str, original_text: str) -> str:
-        """Tarjimadan keyingi ishlov berish (alifbo va emojilar)"""
-        if not result: return ""
-        
-        # [[emoji_id:...]] larni saqlab qolamiz
-        emoji_pattern = r'\[\[emoji_id:[^\]]+\]\]'
-        placeholders = re.findall(emoji_pattern, result)
-        
-        for i, ph in enumerate(placeholders):
-            result = result.replace(ph, f'§{i}§', 1)
-        
-        # Alifboni o'girish
-        if target_alphabet == 'cyrillic':
-            result = self.to_cyrillic(result)
-        elif target_alphabet == 'latin':
-            result = self.to_latin(result)
-            
-        # Emojilarni qaytarish
-        for i, ph in enumerate(placeholders):
-            result = result.replace(f'§{i}§', ph)
-            
-        return result
+            logger.info("Translator Service: OpenAI ChatGPT initialized.")
 
     async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin') -> str:
         if not text: return text
         
+        # 1. Emojilarni va maxsus kodlarni HIMOYALASH
+        # [[emoji_id:...]] larni tarjimadan oldin olib tashlaymiz
+        emoji_pattern = r'\[\[emoji_id:[^\]]+\]\]'
+        found_emojis = re.findall(emoji_pattern, text)
+        protected_text = text
+        for i, emoji_code in enumerate(found_emojis):
+            protected_text = protected_text.replace(emoji_code, f'{{E{i}}}', 1)
+
         # Faqat harflar bor matnlarni tarjima qilamiz
-        if not re.search(r'[a-zA-Zа-яА-ЯёЁ]', text):
-            return text
+        if not re.search(r'[a-zA-Zа-яА-ЯёЁ]', protected_text):
+            # Agar matnda tarjima qiladigan narsa bo'lmasa, emojilarni qaytarib beramiz
+            return self.restore_emojis(protected_text, found_emojis, target_alphabet)
 
         lang_map = {'uz': 'Uzbek', 'ru': 'Russian', 'en': 'English'}
         target_name = lang_map.get(target_lang, 'Uzbek')
@@ -79,15 +64,17 @@ class TranslatorService:
             f"MAJBURIY ALIFBO: Faqat {alphabet_name} ishlating. "
             f"Hech qanday aralash yozuv bo'lmasin.\n\n"
             f"QOIDALAR:\n"
-            f"1. Tarjimani tushunarli, ravon va ma'noli qiling. Sport muxbiri uslubida bo'lsin.\n"
+            f"1. Tarjimani tushunarli va ravon qiling. Sport uslubida bo'lsin.\n"
             f"2. Futbol atamalarini to'g'ri ishlating.\n"
-            f"3. [[emoji_id:...]] formatidagi kodlarni o'zgartirmang.\n"
+            f"3. {{E0}}, {{E1}} kabi kodlarni o'zgartirmang, ularni joyida qoldiring.\n"
             f"4. Linklar va reklamalarni o'chiring.\n"
             f"5. Faqat tayyor tarjima matnini qaytaring.\n\n"
-            f"MATN:\n{text}"
+            f"MATN:\n{protected_text}"
         )
 
-        # 1. ChatGPT orqali tarjima (Asosiy)
+        translated_result = protected_text # Fallback
+
+        # ChatGPT orqali tarjima
         if self.openai_client:
             try:
                 response = await self.openai_client.chat.completions.create(
@@ -95,36 +82,38 @@ class TranslatorService:
                     messages=[{"role": "system", "content": "Siz sport muxbirisiz."}, {"role": "user", "content": prompt}],
                     temperature=0.3
                 )
-                result = response.choices[0].message.content.strip()
-                if result:
-                    return self.post_process(result, target_alphabet, text)
+                translated_result = response.choices[0].message.content.strip()
             except Exception as e:
-                logger.error(f"OpenAI translation failed (timeout/connection): {e}")
+                logger.error(f"OpenAI error: {e}")
+                # Gemini Fallback
+                if self.model_names:
+                    try:
+                        model = genai.GenerativeModel(self.model_names[0])
+                        resp = await asyncio.wait_for(
+                            asyncio.to_thread(model.generate_content, prompt),
+                            timeout=40.0
+                        )
+                        if resp and hasattr(resp, 'text') and resp.text:
+                            translated_result = resp.text.strip()
+                    except Exception as ge:
+                        logger.warning(f"Gemini fallback failed: {ge}")
 
-        # 2. Gemini orqali tarjima (Fallback)
-        safety_settings = [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-        ]
+        # 2. Emojilarni va alifboni QAYTARISH
+        return self.restore_emojis(translated_result, found_emojis, target_alphabet)
 
-        if self.model_names:
-            for m_name in self.model_names:
-                try:
-                    model = genai.GenerativeModel(m_name)
-                    # Gemini uchun ham timeout-ni nazorat qilamiz
-                    response = await asyncio.wait_for(
-                        asyncio.to_thread(model.generate_content, prompt, safety_settings=safety_settings),
-                        timeout=40.0
-                    )
-                    if response and hasattr(response, 'text') and response.text:
-                        result = response.text.strip()
-                        return self.post_process(result, target_alphabet, text)
-                except Exception as e:
-                    logger.warning(f"Gemini {m_name} failed: {e}")
-                    continue
-
+    def restore_emojis(self, text: str, original_emojis: list, target_alphabet: str) -> str:
+        """Berkitilgan emojilarni qaytaradi va alifboni to'g'irlaydi"""
+        # Alifboni o'girish
+        if target_alphabet == 'cyrillic':
+            text = self.to_cyrillic(text)
+        elif target_alphabet == 'latin':
+            text = self.to_latin(text)
+            
+        # Emojilarni joy-joyiga qo'yish
+        for i, emoji_code in enumerate(original_emojis):
+            # Ba'zan ChatGPT {E0} ni (E0) yoki shunchaki E0 qilib qo'yishi mumkin
+            text = re.sub(rf'\{{?E{i}\}}?', emoji_code, text)
+            
         return text
 
     def to_latin(self, text: str) -> str:
@@ -165,7 +154,7 @@ class TranslatorService:
             ('Ch', 'Ч'), ('ch', 'ч'), ('CH', 'Ч'),
             ('Yo', 'Ё'), ('yo', 'ё'), ('YO', 'Ё'),
             ('Yu', 'Ю'), ('yu', 'ю'), ('YU', 'Ю'),
-            ('Ya', 'Я'), ('ya', 'я'), ('YA', 'Я'),
+            ('Ya', 'Я'), ('ya', 'я'), ('YA', 'Ya'),
             ('Ye', 'Е'), ('ye', 'е'), ('YE', 'Е'),
             ('Ts', 'Ц'), ('ts', 'ц'),
             ('A', 'А'), ('B', 'Б'), ('D', 'Д'), ('E', 'Е'), ('F', 'Ф'),
