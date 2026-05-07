@@ -4,15 +4,14 @@ import asyncio
 import re
 import traceback
 import google.generativeai as genai
-from openai import OpenAI as SyncOpenAI
-from bot_database.models import BotSettings
 import httpx
+from bot_database.models import BotSettings
 
 logger = logging.getLogger(__name__)
 
 class TranslatorService:
     def __init__(self):
-        # Gemini sozlamalari
+        # Gemini
         api_key = os.getenv("GEMINI_API_KEY")
         self.model_names = []
         if api_key:
@@ -20,16 +19,16 @@ class TranslatorService:
                 genai.configure(api_key=api_key)
                 models = genai.list_models()
                 self.model_names = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
-                logger.info(f"Translator Service: Gemini models found: {self.model_names}")
+                logger.info(f"Gemini models: {self.model_names}")
             except Exception as e:
                 logger.error(f"Gemini init error: {e}")
         
-        # OpenAI sozlamalari
+        # OpenAI
         self.openai_key = os.getenv("OPENAI_API_KEY")
         if self.openai_key:
-            # Sync client
-            self.sync_openai = SyncOpenAI(api_key=self.openai_key, timeout=60.0)
-            logger.info("Translator Service: OpenAI (Sync) initialized.")
+            logger.info("Translator Service: OpenAI key found. Using direct HTTP requests.")
+        else:
+            logger.error("OPENAI_API_KEY not found!")
 
     async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin') -> str:
         if not text: return text
@@ -54,28 +53,42 @@ class TranslatorService:
 
         translated_result = None
 
-        # 1. ChatGPT
+        # 1. OpenAI (To'g'ridan-to'g'ri HTTP so'rovi bilan)
         if self.openai_key:
             try:
-                response = await asyncio.to_thread(
-                    self.sync_openai.chat.completions.create,
-                    model="gpt-4o-mini",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.3
-                )
-                translated_result = response.choices[0].message.content.strip()
-                if translated_result:
-                    logger.info("✅ SUCCESS: ChatGPT used.")
+                logger.info("Attempting OpenAI translation (Direct HTTP)...")
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(
+                        "https://api.openai.com/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {self.openai_key}",
+                            "Content-Type": "application/json"
+                        },
+                        json={
+                            "model": "gpt-4o-mini",
+                            "messages": [
+                                {"role": "system", "content": "Siz sport muxbirisiz."},
+                                {"role": "user", "content": prompt}
+                            ],
+                            "temperature": 0.3
+                        }
+                    )
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        translated_result = data['choices'][0]['message']['content'].strip()
+                        logger.info("✅ SUCCESS: OpenAI translated via direct HTTP.")
+                    else:
+                        logger.error(f"❌ OpenAI HTTP Error {response.status_code}: {response.text}")
             except Exception as e:
-                # MANA SHU YERDA ANIQLIK KIRITAMIZ
-                full_error = traceback.format_exc()
-                logger.error(f"❌ OPENAI DETAILED ERROR:\n{full_error}")
+                logger.error(f"❌ OpenAI Exception: {str(e)}")
 
         # 2. Gemini Fallback
         if not translated_result and self.model_names:
             priority_models = [m for m in self.model_names if 'flash' in m.lower()] + self.model_names
             for m_name in priority_models:
                 try:
+                    logger.info(f"Attempting Gemini fallback with {m_name}...")
                     model = genai.GenerativeModel(m_name)
                     resp = await asyncio.wait_for(
                         asyncio.to_thread(model.generate_content, prompt),
