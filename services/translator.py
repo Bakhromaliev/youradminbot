@@ -9,28 +9,30 @@ from bot_database.models import BotSettings
 
 logger = logging.getLogger(__name__)
 
-# --- BU YERGA QARANG ---
-logger.info("🚀🚀🚀 TRANSLATOR SERVICE: YANGI HTTP KOD ISHGA TUSHDI! 🚀🚀🚀")
-# -----------------------
+logger.info("🚀🚀🚀 TRANSLATOR SERVICE: KALIT TOZALASH TIZIMI ISHGA TUSHDI! 🚀🚀🚀")
 
 class TranslatorService:
     def __init__(self):
         # Gemini
         api_key = os.getenv("GEMINI_API_KEY")
+        if api_key:
+            api_key = api_key.strip() # Tozalash
         self.model_names = []
         if api_key:
             try:
                 genai.configure(api_key=api_key)
                 models = genai.list_models()
                 self.model_names = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
-                logger.info(f"Gemini models: {self.model_names}")
+                logger.info(f"Gemini models: {len(self.model_names)} ta model topildi.")
             except Exception as e:
                 logger.error(f"Gemini init error: {e}")
         
         # OpenAI
-        self.openai_key = os.getenv("OPENAI_API_KEY")
+        raw_key = os.getenv("OPENAI_API_KEY")
+        self.openai_key = raw_key.strip() if raw_key else None # OXIRIDAGI ENTER/SPACE LARNI O'CHIRISH
+        
         if self.openai_key:
-            logger.info("OpenAI Key yuklandi. To'g'ridan-to'g'ri HTTP ishlatiladi.")
+            logger.info(f"OpenAI Key yuklandi va tozalandi (Uzunligi: {len(self.openai_key)}).")
         else:
             logger.error("OpenAI Key TOPILMADI!")
 
@@ -57,10 +59,9 @@ class TranslatorService:
 
         translated_result = None
 
-        # 1. OpenAI (To'g'ridan-to'g'ri HTTP so'rovi bilan)
+        # 1. OpenAI (Tozalangan kalit bilan)
         if self.openai_key:
             try:
-                logger.info("OpenAI tarjimasi boshlandi (Direct HTTP)...")
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     response = await client.post(
                         "https://api.openai.com/v1/chat/completions",
@@ -81,9 +82,9 @@ class TranslatorService:
                     if response.status_code == 200:
                         data = response.json()
                         translated_result = data['choices'][0]['message']['content'].strip()
-                        logger.info("✅ SUCCESS: OpenAI (HTTP) orqali tarjima qilindi.")
+                        logger.info("✅ SUCCESS: ChatGPT (OpenAI) orqali tarjima qilindi.")
                     else:
-                        logger.error(f"❌ OpenAI HTTP Xatosi {response.status_code}: {response.text}")
+                        logger.error(f"❌ OpenAI API Xatosi {response.status_code}: {response.text}")
             except Exception as e:
                 logger.error(f"❌ OpenAI Exception: {str(e)}")
 
@@ -92,7 +93,6 @@ class TranslatorService:
             priority_models = [m for m in self.model_names if 'flash' in m.lower()] + self.model_names
             for m_name in priority_models:
                 try:
-                    logger.info(f"Gemini fallback sinab ko'rilmoqda: {m_name}...")
                     model = genai.GenerativeModel(m_name)
                     resp = await asyncio.wait_for(
                         asyncio.to_thread(model.generate_content, prompt),
