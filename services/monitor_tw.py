@@ -58,8 +58,12 @@ class TwitterMonitor:
         try:
             async with httpx.AsyncClient(timeout=40) as client:
                 response = await client.get(url, headers=headers, params=params)
-                if response.status_code != 200: return
-                data = response.json(); tweets = data.get('timeline', []) if isinstance(data, dict) else data
+                if response.status_code != 200 or not response.text.strip(): return
+                try:
+                    data = response.json()
+                except Exception: return
+                
+                tweets = data.get('timeline', []) if isinstance(data, dict) else data
                 if not isinstance(tweets, list): return
                 async with AsyncSessionLocal() as session:
                     for tweet in tweets[:3]:
