@@ -17,6 +17,8 @@ class User(Base):
     vip_until = Column(DateTime) # VIP muddati
     daily_post_count = Column(Integer, default=0) # Bugungi postlar soni
     last_post_date = Column(String) # Oxirgi post sanasi (limitni yangilash uchun)
+    admin_channel_id = Column(String) # Tasdiqlash xabarlari ketadigan kanal ID-si
+    admin_channel_name = Column(String) # Tasdiqlash kanali nomi
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Source(Base):

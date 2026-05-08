@@ -160,16 +160,19 @@ class TwitterMonitor:
                             aiotypes.InlineKeyboardButton(text="❌ Rad etish", callback_data=f"reject_post_{new_pending.id}"))
                 builder.row(aiotypes.InlineKeyboardButton(text="📝 Tahrirlash", callback_data=f"edit_post_{new_pending.id}"))
 
+                # --- NOTIFY (Admin channel support) ---
+                notify_chat_id = user.admin_channel_id if user.admin_channel_id else user.telegram_id
+
                 try:
                     if len(caption) <= 1000:
                         if media_url:
-                            await self.bot.send_photo(user.telegram_id, photo=media_url, caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+                            await self.bot.send_photo(notify_chat_id, photo=media_url, caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
                         else:
-                            await self.bot.send_message(user.telegram_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+                            await self.bot.send_message(notify_chat_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
                     else:
                         if media_url:
-                            await self.bot.send_photo(user.telegram_id, photo=media_url)
-                        await self.bot.send_message(user.telegram_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+                            await self.bot.send_photo(notify_chat_id, photo=media_url)
+                        await self.bot.send_message(notify_chat_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
                 except Exception as e:
                     logger.error(f"Notify error (Twitter): {e}")
 

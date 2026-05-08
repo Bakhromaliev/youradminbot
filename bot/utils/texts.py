@@ -57,6 +57,23 @@ TEXTS = {
     'btn_edit': { 'uz': "📝 Tahrirlash", 'ru': "📝 Редактировать", 'en': "📝 Edit" },
     'btn_link_channel': { 'uz': "🔗 Kanalni ulash", 'ru': "🔗 Привязать kanal", 'en': "🔗 Link Channel" },
     'btn_vip': { 'uz': "💎 VIP Tarif", 'ru': "💎 VIP Тариф", 'en': "💎 VIP Tariff" },
+    'btn_admin_channel': { 'uz': "🛡 Admin Kanal", 'ru': "🛡 Админ Канал", 'en': "🛡 Admin Channel" },
+    'admin_channel_prompt': {
+        'uz': "🛡 <b>Admin Kanalni sozlash</b>\n\nTasdiqlash xabarlari (Pending Posts) shaxsiyga kelmasligi uchun alohida kanal ochib, botni u yerda <b>ADMIN</b> qilishingiz kerak.\n\nKeyin o'sha kanalning <b>ID</b> sini yoki <b>@username</b> ini yuboring.",
+        'ru': "🛡 <b>Настройка Админ Канала</b>\n\nЧтобы сообщения о подтверждении (Pending Posts) не приходили в личку, создайте отдельный канал и сделайте бота <b>АДМИНОМ</b>.\n\nЗатем отправьте <b>ID</b> или <b>@username</b> этого канала.",
+        'en': "🛡 <b>Admin Channel Setup</b>\n\nTo prevent approval messages (Pending Posts) from cluttering your private chat, create a separate channel and make the bot an <b>ADMIN</b> there.\n\nThen send the <b>ID</b> or <b>@username</b> of that channel."
+    },
+    'admin_channel_success': {
+        'uz': "✅ <b>Admin Kanal ulandi!</b>\n\nEndi barcha yangi xabarlar tasdiqlash uchun <b>{name}</b> kanaliga yuboriladi.",
+        'ru': "✅ <b>Админ Канал подключен!</b>\n\nТеперь все новые сообщения для подтверждения будут отправляться в канал <b>{name}</b>.",
+        'en': "✅ <b>Admin Channel linked!</b>\n\nNow all new posts for approval will be sent to the <b>{name}</b> channel."
+    },
+    'admin_channel_removed': {
+        'uz': "❌ <b>Admin Kanal o'chirildi!</b>\n\nEndi xabarlar eski tartibda shaxsiyga keladi.",
+        'ru': "❌ <b>Админ Канал удален!</b>\n\nТеперь сообщения будут приходить в личку.",
+        'en': "❌ <b>Admin Channel removed!</b>\n\nNow messages will be sent to your private chat."
+    },
+    'btn_remove_admin_channel': { 'uz': "🗑 Kanalni o'chirish", 'ru': "🗑 Удалить канал", 'en': "🗑 Remove channel" },
     
     'limit_reached': {
         'uz': "⚠️ <b>Kunlik limitingiz tugadi!</b>\n\nSiz kuniga faqat 5 ta post tarjima qilishingiz mumkin. Cheksiz foydalanish uchun <b>VIP tarif</b> sotib oling.",

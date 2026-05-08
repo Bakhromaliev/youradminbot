@@ -28,6 +28,7 @@ def get_main_menu_keyboard(lang='uz', is_vip=False, is_admin=False, user_id=None
 
 def get_settings_keyboard(lang='uz'):
     builder = ReplyKeyboardBuilder()
+    builder.row(types.KeyboardButton(text=get_text('btn_admin_channel', lang)))
     builder.row(types.KeyboardButton(text=get_text('btn_change_lang', lang)))
     builder.row(types.KeyboardButton(text=get_text('btn_main_menu', lang)))
     return builder.as_markup(resize_keyboard=True)
