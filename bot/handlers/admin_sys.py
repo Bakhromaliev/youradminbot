@@ -1,12 +1,44 @@
 import logging
 from aiogram import Router, types, F, Bot
+from aiogram.filters import Command
 from sqlalchemy import update, select
 from bot_database.db import AsyncSessionLocal
-from bot_database.models import User
+from bot_database.models import User, Source
 from datetime import datetime, timedelta
+from services.monitor_tg import TelegramMonitor
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+@router.message(Command("sources_status"))
+async def cmd_sources_status(message: types.Message, bot: Bot, tg_monitor: TelegramMonitor):
+    # Faqat adminlar uchun
+    async with AsyncSessionLocal() as session:
+        user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
+        user = user_res.scalar_one_or_none()
+        if not user or not user.is_admin:
+            return
+
+    status_msg = "🔍 <b>Manbalar holatini tekshirish...</b>\n\n"
+    waiting_msg = await message.answer(status_msg + "⏳ Iltimos kuting, bu biroz vaqt olishi mumkin...", parse_mode="HTML")
+
+    async with AsyncSessionLocal() as session:
+        # Telegram manbalarini olish
+        result = await session.execute(select(Source).where(Source.source_type == "telegram"))
+        sources = result.scalars().all()
+
+    if not sources:
+        return await waiting_msg.edit_text("📭 Ulangan Telegram manbalari topilmadi.")
+
+    full_report = "📊 <b>Telegram Manbalari Holati:</b>\n\n"
+    
+    for src in sources:
+        check_res = await tg_monitor.check_source_access(src.source_id)
+        full_report += f"🔹 <b>ID:</b> <code>{src.source_id}</code>\n"
+        full_report += f"   📌 <b>Holat:</b> {check_res}\n"
+        full_report += "-------------------\n"
+
+    await waiting_msg.edit_text(full_report, parse_mode="HTML")
 
 @router.callback_query(F.data.startswith("sys_approve_"))
 async def sys_approve_user(callback: types.CallbackQuery, bot: Bot):

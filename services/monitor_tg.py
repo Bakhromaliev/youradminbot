@@ -69,6 +69,16 @@ class TelegramMonitor:
         except Exception as e:
             return f"❌ Xato: {str(e)}"
 
+    async def check_source_access(self, source_id: str):
+        """Kanalga kirish huquqini tekshiradi (Admin status buyrug'i uchun)"""
+        if not self.client or not self.client.is_connected():
+            return "❌ Telethon ulanmagan"
+        try:
+            entity = await self.client.get_entity(source_id)
+            return f"✅ OK ({entity.title})"
+        except Exception as e:
+            return f"❌ Xato: {str(e)}"
+
     async def start(self):
         try:
             if self.session_string:
