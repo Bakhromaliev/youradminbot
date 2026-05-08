@@ -57,6 +57,9 @@ async def main():
     # Monitor-ni handler-larga uzatish
     dp["tg_monitor"] = tg_monitor
     
+    tw_monitor = TwitterMonitor(translator=translator, bot=bot, interval=900)
+    dp["tw_monitor"] = tw_monitor
+    
     # Handlerlarni ro'yxatdan o'tkazish
     dp.include_router(vip.router) # VIP birinchi
     dp.include_router(admin_sys.router)

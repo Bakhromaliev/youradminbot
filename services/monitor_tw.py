@@ -17,7 +17,20 @@ logger = logging.getLogger(__name__)
 class TwitterMonitor:
     def __init__(self, translator: TranslatorService, bot: Bot, interval: int = 1800):
         self.translator = translator; self.bot = bot; self.interval = interval
-        self.api_key = os.getenv("RAPIDAPI_KEY"); self.api_host = os.getenv("RAPIDAPI_HOST")
+        self.api_key = os.getenv("RAPIDAPI_KEY");        self.api_host = os.getenv("RAPIDAPI_HOST")
+
+    async def check_twitter_access(self, username: str):
+        """Twitter manbasini tekshiradi (Admin status buyrug'i uchun)"""
+        if not self.api_key: return "❌ API Key yo'q"
+        url = f"https://{self.api_host}/timeline.php"
+        params = {"screenname": username.replace("@", "").strip()}
+        headers = {"X-RapidAPI-Key": self.api_key, "X-RapidAPI-Host": self.api_host}
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(url, headers=headers, params=params)
+                if resp.status_code == 200: return "✅ OK"
+                return f"❌ Xato (Status: {resp.status_code})"
+        except Exception as e: return f"❌ Xato: {str(e)}"
 
     async def start(self):
         if not self.api_key: return
