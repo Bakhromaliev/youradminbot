@@ -125,7 +125,7 @@ class TwitterMonitor:
                 ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
                 channel = ch_res.scalar_one()
 
-                translated = await self.translator.translate(text, target_lang=channel.target_lang, target_alphabet=channel.alphabet)
+                translated = await self.translator.translate(text, target_lang=channel.target_lang, target_alphabet=channel.alphabet, is_twitter=True)
                 
                 # --- FORMATTING (Unified style) ---
                 display_text = translated

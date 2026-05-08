@@ -26,7 +26,7 @@ class TranslatorService:
         raw_key = os.getenv("OPENAI_API_KEY")
         self.openai_key = raw_key.strip() if raw_key else None
 
-    async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin') -> str:
+    async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin', is_twitter: bool = False) -> str:
         if not text: return text
         
         if not re.search(r'[a-zA-Zа-яА-ЯёЁўЎғҒқҚҳҲ]', text):
@@ -39,20 +39,25 @@ class TranslatorService:
         for i, emoji_code in enumerate(found_emojis):
             protected_text = protected_text.replace(emoji_code, f'____{i}____', 1)
 
-        system_instruction = (
-            "Siz professional sport jurnalisti va insayder yangiliklari mutaxassisiz.\n"
-            "TWITTER POSTLARINI FORMATLASH QOIDALARI:\n"
-            "1. 'JUST IN', 'CONFIRMED', 'BREAKING' so'zlarini TARJIMA QILMANG. Format: 🚨 <b>JUST IN:</b>, ✅ <b>CONFIRMED:</b>, 📰 <b>BREAKING:</b>\n"
-            "2. Insayder yoki Manba ismini toping (masalan: @FabrizioRomano, The Athletic).\n"
-            "3. Manba ismidan '@' belgisini olib tashlang. Ismni doim LOTIN (LATIN) harflarida yozing.\n"
-            "4. Manbani alohida qatorga, pastga mana bu formatda qo'shing: 📰 [Source Name]\n"
-            "5. Muhim: Manba ismini [[[ ]]] belgilari ichiga oling, masalan: 📰 [[[Fabrizio Romano]]]. Bu uni kirillchaga o'tib ketishidan asraydi.\n"
-            "6. Tarjimani o'ta tabiiy o'zbek tilida, gap tartibini to'g'rilab yozing.\n"
-            "7. MAJBURIY: Faqat LOTIN (LATIN) alifbosida javob bering."
-        )
+        # TWITTER UCHUN MAXSUS QOIDALAR
+        if is_twitter:
+            system_instruction = (
+                "Siz professional sport jurnalistisiz. Twitter postini tahlil qiling.\n"
+                "1. 'JUST IN', 'CONFIRMED', 'BREAKING' so'zlarini TARJIMA QILMANG, ularni so'z boshida qoldiring.\n"
+                "2. Insayder/Manba ismidan '@' belgisini olib tashlang, ismni LOTINDA qoldiring.\n"
+                "3. Manbani alohida qatorga SOURCE: [[[Ism]]] ko'rinishida yozing.\n"
+                "4. Tarjimani ona tilidagidek, gap tartibini to'g'rilab yozing.\n"
+                "5. Faqat LOTIN alifbosida, HTML teglarsiz javob bering."
+            )
+        else:
+            # TELEGRAM UCHUN ODDIY TARJIMA
+            system_instruction = (
+                "Siz o'zbek sport blogerisiz. Futbol yangiliklarini ona tilidagi kabi tabiiy tarjima qiling.\n"
+                "Gap tartibini to'g'rilang. Hech qanday HTML teglarsiz, faqat toza matn bering. Faqat LOTINDA javob bering."
+            )
 
         prompt = (
-            f"Quyidagi Twitter postini tahlil qiling va yuqoridagi qoidalar bo'yicha tarjima qiling:\n\n"
+            f"Quyidagi futbol xabarini o'zbek tiliga lotin alifbosida tarjima qiling:\n\n"
             f"MATN:\n{protected_text}"
         )
 
@@ -90,10 +95,27 @@ class TranslatorService:
                     translated_result = resp.text.strip()
             except Exception: pass
 
-        return self.restore_emojis(translated_result or protected_text, found_emojis, target_alphabet)
+        if not translated_result:
+            return self.restore_emojis(protected_text, found_emojis, target_alphabet)
+
+        # TOZALASH
+        translated_result = translated_result.replace('<', '&lt;').replace('>', '&gt;')
+
+        # TWITTER FORMATLASH (faqat is_twitter bo'lsa)
+        if is_twitter:
+            for kw in ["JUST IN", "CONFIRMED", "BREAKING"]:
+                translated_result = translated_result.replace(f"{kw}:", f"<b>{kw}:</b>")
+                translated_result = translated_result.replace(kw, f"<b>{kw}:</b>")
+            
+            # Emojilar
+            translated_result = translated_result.replace("<b>JUST IN:</b>", "🚨 <b>JUST IN:</b>")
+            translated_result = translated_result.replace("<b>CONFIRMED:</b>", "✅ <b>CONFIRMED:</b>")
+            translated_result = translated_result.replace("<b>BREAKING:</b>", "📰 <b>BREAKING:</b>")
+            translated_result = translated_result.replace("SOURCE:", "\n\n📰")
+
+        return self.restore_emojis(translated_result, found_emojis, target_alphabet)
 
     def restore_emojis(self, text: str, original_emojis: list, target_alphabet: str) -> str:
-        # Kirillchaga o'girishdan oldin Lotincha himoyalangan manbalarni ajratib olish
         protected_sources = re.findall(r'\[\[\[(.*?)\]\]\]', text)
         for i, source in enumerate(protected_sources):
             text = text.replace(f'[[[{source}]]]', f'____SRC_{i}____')
@@ -103,13 +125,13 @@ class TranslatorService:
         elif target_alphabet == 'latin':
             text = self.to_latin(text)
         
-        # Manbalarni qaytarish (Lotin holida qoladi)
         for i, source in enumerate(protected_sources):
-            text = text.replace(f'____SRC_{i}____', source)
+            text = text.replace(f'____SRC_{i}____', f"<b>{source}</b>")
 
-        # Emojilarni qaytarish
         for i, emoji_code in enumerate(original_emojis):
             text = text.replace(f'____{i}____', emoji_code)
+        
+        text = text.replace("<b><b>", "<b>").replace("</b></b>", "</b>")
         return text
 
     def to_latin(self, text: str) -> str:
