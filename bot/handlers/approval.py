@@ -1,29 +1,30 @@
 import logging
 import html
 import os
+import re
 from aiogram import Router, types, F, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 from bot_database.db import AsyncSessionLocal
-from bot_database.models import PendingPost, SourceChannelLink, OutputChannel, User, PostMedia
+from bot_database.models import PendingPost, SourceChannelLink, OutputChannel, User, PostMedia, Source
 from bot.utils.texts import get_text
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import FSInputFile
+from services.translator import TranslatorService
 
 logger = logging.getLogger(__name__)
 router = Router()
+translator_service = TranslatorService() # Alifbo o'girish uchun
 
 class EditPostStates(StatesGroup):
     waiting_for_new_text = State()
 
 def get_preview_keyboard(post_id: int):
     builder = InlineKeyboardBuilder()
-    builder.row(
-        types.InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"approve_post_{post_id}"),
-        types.InlineKeyboardButton(text="❌ Rad etish", callback_data=f"reject_post_{post_id}")
-    )
+    builder.row(types.InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"approve_post_{post_id}"),
+                types.InlineKeyboardButton(text="❌ Rad etish", callback_data=f"reject_post_{post_id}"))
     builder.row(types.InlineKeyboardButton(text="📝 Tahrirlash", callback_data=f"edit_post_{post_id}"))
     return builder.as_markup()
 
@@ -31,67 +32,66 @@ def get_preview_keyboard(post_id: int):
 async def approve_post(callback: types.CallbackQuery, bot: Bot):
     post_id = int(callback.data.split("_")[-1])
     async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(PendingPost).where(PendingPost.id == post_id).options(selectinload(PendingPost.media))
-        )
+        result = await session.execute(select(PendingPost).where(PendingPost.id == post_id).options(selectinload(PendingPost.media)))
         post = result.scalar_one_or_none()
         if not post or post.status != "pending": return
 
-        link_res = await session.execute(select(SourceChannelLink).where(SourceChannelLink.id == post.link_id))
-        link = link_res.scalar_one()
-        ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
-        channel = ch_res.scalar_one()
+        # Barcha bog'langan kanallarni topamiz
+        stmt = select(SourceChannelLink).where(SourceChannelLink.source_id == post.source_id, SourceChannelLink.user_id == post.user_id)
+        links = (await session.execute(stmt)).scalars().all()
         
-        dest_id = channel.channel_id
-        final_text = decode_premium_emojis(post.translated_text)
-        if channel.signature:
-            sig = decode_premium_emojis(channel.signature)
-            if channel.is_bold_signature: sig = f"<b>{sig}</b>"
-            spacing = "\n" * (channel.signature_spacing + 1)
-            final_text += spacing + sig
+        if not links: return await callback.answer("❌ Bu manbaga ulangan kanallar topilmadi.", show_alert=True)
 
-        try:
-            if post.media_url:
-                # Twitter dan kelgan rasm URL orqali yuboriladi
-                await bot.send_photo(chat_id=dest_id, photo=post.media_url, caption=final_text, parse_mode="HTML")
-            elif not post.media:
-                await bot.send_message(chat_id=dest_id, text=final_text, parse_mode="HTML")
-            elif len(post.media) == 1:
-                m = post.media[0]
-                file = FSInputFile(m.file_id)
-                if m.media_type == 'photo':
-                    await bot.send_photo(chat_id=dest_id, photo=file, caption=final_text, parse_mode="HTML")
-                else:
-                    await bot.send_video(chat_id=dest_id, video=file, caption=final_text, parse_mode="HTML")
+        count = 0
+        for link in links:
+            ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
+            channel = ch_res.scalar_one()
+            
+            # Matnni kanal alifbosiga moslaymiz
+            base_text = post.translated_text
+            if channel.alphabet == 'cyrillic':
+                final_text = translator_service.to_cyrillic(base_text)
             else:
-                media_group = []
-                for i, m in enumerate(post.media):
-                    file = FSInputFile(m.file_id)
-                    if m.media_type == 'photo':
-                        media_group.append(types.InputMediaPhoto(media=file, caption=final_text if i == 0 else "", parse_mode="HTML"))
-                    else:
-                        media_group.append(types.InputMediaVideo(media=file, caption=final_text if i == 0 else "", parse_mode="HTML"))
-                await bot.send_media_group(chat_id=dest_id, media=media_group)
+                final_text = translator_service.to_latin(base_text)
             
-            await session.execute(update(PendingPost).where(PendingPost.id == post_id).values(status="approved"))
-            await session.commit()
+            final_text = decode_premium_emojis(final_text)
             
-            try: await callback.message.delete()
-            except: pass
-            await callback.answer("✅ Kanalga yuborildi!")
-        except Exception as e:
-            logger.error(f"Approval error: {e}")
-            await callback.answer(f"Xatolik: {e}", show_alert=True)
+            # Imzo qo'shamiz
+            if channel.signature:
+                sig = decode_premium_emojis(channel.signature)
+                if channel.is_bold_signature: sig = f"<b>{sig}</b>"
+                final_text += ("\n" * (channel.signature_spacing + 1)) + sig
+
+            try:
+                if post.media_url:
+                    await bot.send_photo(chat_id=channel.channel_id, photo=post.media_url, caption=final_text, parse_mode="HTML")
+                elif not post.media:
+                    await bot.send_message(chat_id=channel.channel_id, text=final_text, parse_mode="HTML")
+                elif len(post.media) == 1:
+                    m = post.media[0]; file = FSInputFile(m.file_id)
+                    if m.media_type == 'photo': await bot.send_photo(chat_id=channel.channel_id, photo=file, caption=final_text, parse_mode="HTML")
+                    else: await bot.send_video(chat_id=channel.channel_id, video=file, caption=final_text, parse_mode="HTML")
+                else:
+                    media_group = []
+                    for i, m in enumerate(post.media):
+                        file = FSInputFile(m.file_id)
+                        if m.media_type == 'photo': media_group.append(types.InputMediaPhoto(media=file, caption=final_text if i == 0 else "", parse_mode="HTML"))
+                        else: media_group.append(types.InputMediaVideo(media=file, caption=final_text if i == 0 else "", parse_mode="HTML"))
+                    await bot.send_media_group(chat_id=channel.channel_id, media=media_group)
+                count += 1
+            except Exception as e:
+                logger.error(f"Error sending to {channel.channel_name}: {e}")
+
+        await session.execute(update(PendingPost).where(PendingPost.id == post_id).values(status="approved"))
+        await session.commit()
+        
+        try: await callback.message.delete()
+        except: pass
+        await callback.answer(f"✅ {count} ta kanalga yuborildi!")
 
 def decode_premium_emojis(text: str) -> str:
     if not text: return ""
-    import re
-    # [[emoji_id:123:😅]] -> <tg-emoji emoji-id="123">😅</tg-emoji>
-    return re.sub(
-        r'\[\[emoji_id:(\d+):(.+?)\]\]',
-        r'<tg-emoji emoji-id="\1">\2</tg-emoji>',
-        text
-    )
+    return re.sub(r'\[\[emoji_id:(\d+):(.+?)\]\]', r'<tg-emoji emoji-id="\1">\2</tg-emoji>', text)
 
 @router.callback_query(F.data.startswith("reject_post_"))
 async def reject_post(callback: types.CallbackQuery):
@@ -113,49 +113,37 @@ async def reject_post(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("edit_post_"))
 async def edit_post_start(callback: types.CallbackQuery, state: FSMContext):
     post_id = int(callback.data.split("_")[-1])
-    # Eski xabarni o'chirmaymiz (user so'ragandek)
     await state.update_data(editing_post_id=post_id)
     await state.set_state(EditPostStates.waiting_for_new_text)
-    instruction = await callback.message.answer("⌨️ Yangi matnni yuboring (imzosiz):")
+    instruction = await callback.message.answer("⌨️ Yangi matnni yuboring (imzosiz va original alifboda):")
     await state.update_data(instruction_msg_id=instruction.message_id)
     await callback.answer()
 
 @router.message(EditPostStates.waiting_for_new_text)
 async def edit_post_finish(message: types.Message, state: FSMContext, bot: Bot):
-    data = await state.get_data()
-    post_id = data['editing_post_id']
-    instruction_id = data.get('instruction_msg_id')
-    new_text = message.text
+    data = await state.get_data(); post_id = data['editing_post_id']
+    instruction_id = data.get('instruction_msg_id'); new_text = message.text
     try:
-        await bot.delete_message(message.chat.id, instruction_id)
-        await message.delete()
+        await bot.delete_message(message.chat.id, instruction_id); await message.delete()
     except: pass
 
     async with AsyncSessionLocal() as session:
         await session.execute(update(PendingPost).where(PendingPost.id == post_id).values(translated_text=new_text))
         await session.commit()
         
-        # Link va Kanalni qayta yuklaymiz (Imzoni ko'rsatish uchun)
-        result = await session.execute(
-            select(PendingPost).where(PendingPost.id == post_id).options(selectinload(PendingPost.media))
-        )
-        post = result.scalar_one()
-        link_res = await session.execute(select(SourceChannelLink).where(SourceChannelLink.id == post.link_id))
-        link = link_res.scalar_one()
-        ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
-        channel = ch_res.scalar_one()
-
-        # Imzoni tayyorlaymiz
-        display_text = new_text
-        if channel.signature:
-            sig = channel.signature
-            if channel.is_bold_signature: sig = f"<b>{sig}</b>"
-            spacing = "\n" * (channel.signature_spacing + 1)
-            display_text += spacing + sig
-
+        post = (await session.execute(select(PendingPost).where(PendingPost.id == post_id).options(selectinload(PendingPost.media)))).scalar_one()
+        links = (await session.execute(select(SourceChannelLink).where(SourceChannelLink.source_id == post.source_id, SourceChannelLink.user_id == post.user_id))).scalars().all()
+        
+        channel_names = []
+        for link in links:
+            ch = (await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))).scalar_one()
+            channel_names.append(f"📢 {ch.channel_name}")
+        
+        channels_str = "\n".join(channel_names)
         preview_body = (
             f"📝 <b>Tarjima (Tahrirlangan):</b>\n\n"
-            f"👇 Nusxalash uchun ustiga bosing:\n<code>{display_text}</code>"
+            f"📍 <b>Yuboriladigan kanallar:</b>\n{channels_str}\n\n"
+            f"<code>{new_text}</code>"
         )
         
         if post.media_url:
@@ -163,20 +151,15 @@ async def edit_post_finish(message: types.Message, state: FSMContext, bot: Bot):
         elif not post.media:
             await message.answer(preview_body, reply_markup=get_preview_keyboard(post.id), parse_mode="HTML")
         elif len(post.media) == 1:
-            m = post.media[0]
-            file = FSInputFile(m.file_id)
-            if m.media_type == 'photo':
-                await message.answer_photo(file, caption=preview_body, reply_markup=get_preview_keyboard(post.id), parse_mode="HTML")
-            else:
-                await message.answer_video(file, caption=preview_body, reply_markup=get_preview_keyboard(post.id), parse_mode="HTML")
+            m = post.media[0]; file = FSInputFile(m.file_id)
+            if m.media_type == 'photo': await message.answer_photo(file, caption=preview_body, reply_markup=get_preview_keyboard(post.id), parse_mode="HTML")
+            else: await message.answer_video(file, caption=preview_body, reply_markup=get_preview_keyboard(post.id), parse_mode="HTML")
         else:
             media_group = []
             for i, m in enumerate(post.media):
                 file = FSInputFile(m.file_id)
-                if m.media_type == 'photo':
-                    media_group.append(types.InputMediaPhoto(media=file, caption=preview_body if i == 0 else "", parse_mode="HTML"))
-                else:
-                    media_group.append(types.InputMediaVideo(media=file, caption=preview_body if i == 0 else "", parse_mode="HTML"))
+                if m.media_type == 'photo': media_group.append(types.InputMediaPhoto(media=file, caption=preview_body if i == 0 else "", parse_mode="HTML"))
+                else: media_group.append(types.InputMediaVideo(media=file, caption=preview_body if i == 0 else "", parse_mode="HTML"))
             await message.answer_media_group(media=media_group)
             await message.answer("👆 Tahrirlangan albomni tasdiqlaysizmi?", reply_markup=get_preview_keyboard(post.id))
     await state.clear()

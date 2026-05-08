@@ -16,22 +16,14 @@ logger = logging.getLogger(__name__)
 
 class TwitterMonitor:
     def __init__(self, translator: TranslatorService, bot: Bot, interval: int = 1800):
-        self.translator = translator
-        self.bot = bot
-        self.interval = interval
-        self.processed_tweets = set()
-        self.initialized_sources = set()
-        self.api_key = os.getenv("RAPIDAPI_KEY")
-        self.api_host = os.getenv("RAPIDAPI_HOST")
+        self.translator = translator; self.bot = bot; self.interval = interval
+        self.api_key = os.getenv("RAPIDAPI_KEY"); self.api_host = os.getenv("RAPIDAPI_HOST")
 
     async def start(self):
-        logger.info("Twitter Monitor starting (Optimized Deep Scanner)...")
         if not self.api_key: return
         while True:
-            try:
-                await self.check_all_twitter_unique_sources()
-            except Exception as e:
-                logger.error(f"Twitter loop error: {e}")
+            try: await self.check_all_twitter_unique_sources()
+            except Exception as e: logger.error(f"Twitter loop error: {e}")
             await asyncio.sleep(self.interval) 
 
     async def check_all_twitter_unique_sources(self):
@@ -39,142 +31,73 @@ class TwitterMonitor:
             result = await session.execute(select(Source).where(Source.source_type == "twitter"))
             all_sources = result.scalars().all()
             if not all_sources: return
-            
-            grouped_sources = {}
+            grouped = {}
             for src in all_sources:
-                username = src.source_id.replace("@", "").strip().lower()
-                if username not in grouped_sources:
-                    grouped_sources[username] = []
-                grouped_sources[username].append(src)
-            
-            for username, sources in grouped_sources.items():
-                await self.fetch_tweets_api_optimized(username, sources)
-                await asyncio.sleep(5)
+                u = src.source_id.replace("@", "").strip().lower()
+                if u not in grouped: grouped[u] = []
+                grouped[u].append(src)
+            for u, sources in grouped.items():
+                await self.fetch_tweets_api_optimized(u, sources); await asyncio.sleep(5)
 
     async def fetch_tweets_api_optimized(self, username, sources_list):
-        url = f"https://{self.api_host}/timeline.php"
-        params = {"screenname": username}
-        headers = {
-            "X-RapidAPI-Key": self.api_key,
-            "X-RapidAPI-Host": self.api_host
-        }
-
+        url = f"https://{self.api_host}/timeline.php"; params = {"screenname": username}
+        headers = {"X-RapidAPI-Key": self.api_key, "X-RapidAPI-Host": self.api_host}
         try:
             async with httpx.AsyncClient(timeout=40) as client:
                 response = await client.get(url, headers=headers, params=params)
                 if response.status_code != 200: return
-                data = response.json()
-                tweets = data.get('timeline', []) if isinstance(data, dict) else data
+                data = response.json(); tweets = data.get('timeline', []) if isinstance(data, dict) else data
                 if not isinstance(tweets, list): return
-
                 async with AsyncSessionLocal() as session:
                     for tweet in tweets[:3]:
                         if tweet.get('retweeted') or 'retweeted_status' in tweet: continue
-                        tweet_id = str(tweet.get('tweet_id') or tweet.get('id_str') or tweet.get('id'))
-                        if not tweet_id: continue
-                        
-                        existing = await session.execute(
-                            select(PendingPost).where(PendingPost.source_type == "twitter", PendingPost.original_text.contains(tweet_id))
-                        )
+                        t_id = str(tweet.get('tweet_id') or tweet.get('id_str') or tweet.get('id'))
+                        if not t_id: continue
+                        existing = await session.execute(select(PendingPost).where(PendingPost.source_type == "twitter", PendingPost.original_text.contains(t_id)))
                         if existing.scalar_one_or_none(): continue
-                        
                         raw_text = tweet.get('text') or tweet.get('full_text') or ""
                         if not raw_text: continue
                         media_url = self.find_media_recursive(tweet)
-                        
-                        clean_text = re.sub(r'https?://\S+', '', raw_text)
-                        clean_text = re.sub(r't\.me/\S+', '', clean_text)
-                        clean_text = re.sub(r'tg://\S+', '', clean_text)
-                        clean_text = re.sub(r'www\.\S+', '', clean_text)
-                        clean_text = re.sub(r'@\w+', '', clean_text)
-                        clean_text = clean_text.strip()
-
+                        clean_text = re.sub(r'https?://\S+|t\.me/\S+|tg://\S+|www\.\S+|@\w+', '', raw_text).strip()
                         if not clean_text and not media_url: continue
-                        for source_record in sources_list:
-                            await self.process_single_tweet_for_user(tweet_id, clean_text, media_url, source_record)
-        except Exception as e:
-            logger.error(f"API Error for @{username}: {e}")
+                        for src in sources_list: await self.process_unified_tweet(t_id, clean_text, media_url, src)
+        except Exception as e: logger.error(f"API Error for @{username}: {e}")
 
-    async def process_single_tweet_for_user(self, tweet_id, text, media_url, source_obj):
+    async def process_unified_tweet(self, tweet_id, text, media_url, source_obj):
         async with AsyncSessionLocal() as session:
-            stmt = select(SourceChannelLink).where(SourceChannelLink.source_id == source_obj.id)
-            result = await session.execute(stmt)
-            links = result.scalars().all()
+            links = (await session.execute(select(SourceChannelLink).where(SourceChannelLink.source_id == source_obj.id))).scalars().all()
             if not links: return
-
-            user_res = await session.execute(select(User).where(User.id == source_obj.user_id))
-            user = user_res.scalar_one_or_none()
+            user = (await session.execute(select(User).where(User.id == source_obj.user_id))).scalar_one_or_none()
             if not user: return
 
-            # LIMIT
-            if not user.is_vip and not user.is_admin:
-                today = datetime.utcnow().strftime('%Y-%m-%d')
-                if user.last_post_date != today:
-                    user.daily_post_count = 0
-                    user.last_post_date = today
-                if user.daily_post_count >= 5:
-                    if user.daily_post_count == 5:
-                        try: await self.bot.send_message(user.telegram_id, get_text('limit_reached', user.bot_language), parse_mode="HTML")
-                        except: pass
-                        user.daily_post_count += 1
-                        await session.commit()
-                    return
-                user.daily_post_count += 1
+            translated = await self.translator.translate(text, target_lang='uz', target_alphabet='latin', is_twitter=True)
+            db_text = f"{text}\n\n#tw_id:{tweet_id}"
+            new_pending = PendingPost(user_id=user.id, source_id=source_obj.id, source_type="twitter", original_text=db_text, translated_text=translated, media_url=media_url)
+            session.add(new_pending); await session.commit()
 
+            channel_names = []
             for link in links:
-                ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
-                channel = ch_res.scalar_one()
+                ch = (await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))).scalar_one()
+                channel_names.append(f"📢 {ch.channel_name}")
+            
+            channels_str = "\n".join(channel_names)
+            header = f"🆕 <b>SHERIK: Yangi post (Twitter)!</b>\n\n📍 <b>Yuboriladigan kanallar:</b>\n{channels_str}\n\n"
+            caption = f"{header}📝 <b>Tarjima (Nusxalash uchun):</b>\n<code>{translated}</code>"
+            
+            chat_id = user.admin_channel_id if user.admin_channel_id else user.telegram_id
+            builder = InlineKeyboardBuilder()
+            builder.row(aiotypes.InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"approve_post_{new_pending.id}"),
+                        aiotypes.InlineKeyboardButton(text="❌ Rad etish", callback_data=f"reject_post_{new_pending.id}"))
+            builder.row(aiotypes.InlineKeyboardButton(text="📝 Tahrirlash", callback_data=f"edit_post_{new_pending.id}"))
 
-                translated = await self.translator.translate(text, target_lang=channel.target_lang, target_alphabet=channel.alphabet, is_twitter=True)
-                
-                # --- FORMATTING (Separated to avoid nested tags) ---
-                header = f"🆕 <b>SHERIK: Yangi post! (Twitter)</b>\n\n"
-                
-                # Copyable part (the news itself)
-                copyable_text = f"<code>{translated}</code>"
-                
-                # Signature and other info
-                footer = ""
-                if channel.signature:
-                    sig = channel.signature
-                    if channel.is_bold_signature: sig = f"<b>{sig}</b>"
-                    footer += ("\n" * (channel.signature_spacing + 1)) + sig
-                
-                caption = f"{header}📝 Tarjima (nusxalash uchun ustiga bosing):\n{copyable_text}{footer}"
-
-                # DB ga saqlash
-                db_text = f"{text}\n\n#tw_id:{tweet_id}"
-                new_pending = PendingPost(
-                    user_id=user.id, 
-                    link_id=link.id, 
-                    source_type="twitter", 
-                    original_text=db_text, 
-                    translated_text=translated, 
-                    media_url=media_url
-                )
-                session.add(new_pending)
-                await session.commit()
-
-                builder = InlineKeyboardBuilder()
-                builder.row(aiotypes.InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"approve_post_{new_pending.id}"),
-                            aiotypes.InlineKeyboardButton(text="❌ Rad etish", callback_data=f"reject_post_{new_pending.id}"))
-                builder.row(aiotypes.InlineKeyboardButton(text="📝 Tahrirlash", callback_data=f"edit_post_{new_pending.id}"))
-
-                # --- NOTIFY (Admin channel support) ---
-                notify_chat_id = user.admin_channel_id if user.admin_channel_id else user.telegram_id
-
-                try:
-                    if len(caption) <= 1000:
-                        if media_url:
-                            await self.bot.send_photo(notify_chat_id, photo=media_url, caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
-                        else:
-                            await self.bot.send_message(notify_chat_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
-                    else:
-                        if media_url:
-                            await self.bot.send_photo(notify_chat_id, photo=media_url)
-                        await self.bot.send_message(notify_chat_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
-                except Exception as e:
-                    logger.error(f"Notify error (Twitter): {e}")
+            try:
+                if len(caption) <= 1000:
+                    if media_url: await self.bot.send_photo(chat_id, photo=media_url, caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+                    else: await self.bot.send_message(chat_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+                else:
+                    if media_url: await self.bot.send_photo(chat_id, photo=media_url)
+                    await self.bot.send_message(chat_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+            except Exception as e: logger.error(f"Notify error (Twitter): {e}")
 
     def find_media_recursive(self, obj):
         if isinstance(obj, dict):
@@ -182,7 +105,7 @@ class TwitterMonitor:
                 if k in ['media_url_https', 'media_url', 'thumbnail_url', 'image_url']: return v
                 if isinstance(v, str) and (v.startswith('http') and ('.jpg' in v or '.png' in v or '.jpeg' in v)):
                     if 'profile_images' not in v: return v
-                res = self.find_media_recursive(v)
+                res = self.find_media_recursive(v); 
                 if res: return res
         elif isinstance(obj, list):
             for item in obj:
