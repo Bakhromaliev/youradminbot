@@ -127,18 +127,20 @@ class TwitterMonitor:
 
                 translated = await self.translator.translate(text, target_lang=channel.target_lang, target_alphabet=channel.alphabet, is_twitter=True)
                 
-                # --- FORMATTING (Unified style) ---
-                display_text = translated
+                # --- FORMATTING (Separated to avoid nested tags) ---
+                header = f"🆕 <b>SHERIK: Yangi post! (Twitter)</b>\n\n"
+                
+                # Copyable part (the news itself)
+                copyable_text = f"<code>{translated}</code>"
+                
+                # Signature and other info
+                footer = ""
                 if channel.signature:
                     sig = channel.signature
                     if channel.is_bold_signature: sig = f"<b>{sig}</b>"
-                    display_text += ("\n" * (channel.signature_spacing + 1)) + sig
-
-                # Header va Monospace
-                caption = (
-                    f"🆕 <b>SHERIK: Yangi post! (Twitter)</b>\n\n"
-                    f"📝 Tarjima (nusxalash uchun ustiga bosing):\n<code>{display_text}</code>"
-                )
+                    footer += ("\n" * (channel.signature_spacing + 1)) + sig
+                
+                caption = f"{header}📝 Tarjima (nusxalash uchun ustiga bosing):\n{copyable_text}{footer}"
 
                 # DB ga saqlash
                 db_text = f"{text}\n\n#tw_id:{tweet_id}"
