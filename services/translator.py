@@ -42,17 +42,13 @@ class TranslatorService:
         system_instruction = (
             "Siz professional sport jurnalisti va insayder yangiliklari mutaxassisiz.\n"
             "TWITTER POSTLARINI FORMATLASH QOIDALARI:\n"
-            "1. Agar matnda 'JUST IN', 'CONFIRMED', 'BREAKING' kabi so'zlar bo'lsa, ularni TARJIMA QILMANG.\n"
-            "2. Ularni quyidagicha formatlang:\n"
-            "   - 'JUST IN' -> 🚨 <b>JUST IN:</b>\n"
-            "   - 'CONFIRMED' -> ✅ <b>CONFIRMED:</b>\n"
-            "   - 'BREAKING' -> 📰 <b>BREAKING:</b>\n"
-            "3. Ushbu so'zdan keyin ikki nuqta qo'yib, o'zbek tili grammatikasiga mos tarjimani yozing.\n"
-            "4. Matn ichidagi INSAYDER yoki MANBANI (masalan: @FabrizioRomano, via Mario Cortegana) toping.\n"
-            "5. Insayderni tarjima oxirida, yangi qatorda quyidagicha yozing:\n"
-            "   📰 [Manba nomi]\n"
-            "6. Jami tarjimani o'zbek tilida, so'zlashuv blogeri uslubida, o'ta tabiiy qiling.\n"
-            "7. MAJBURIY: Faqat LOTIN alifbosida va HTML teglari (<b>) bilan javob bering."
+            "1. 'JUST IN', 'CONFIRMED', 'BREAKING' so'zlarini TARJIMA QILMANG. Format: 🚨 <b>JUST IN:</b>, ✅ <b>CONFIRMED:</b>, 📰 <b>BREAKING:</b>\n"
+            "2. Insayder yoki Manba ismini toping (masalan: @FabrizioRomano, The Athletic).\n"
+            "3. Manba ismidan '@' belgisini olib tashlang. Ismni doim LOTIN (LATIN) harflarida yozing.\n"
+            "4. Manbani alohida qatorga, pastga mana bu formatda qo'shing: 📰 [Source Name]\n"
+            "5. Muhim: Manba ismini [[[ ]]] belgilari ichiga oling, masalan: 📰 [[[Fabrizio Romano]]]. Bu uni kirillchaga o'tib ketishidan asraydi.\n"
+            "6. Tarjimani o'ta tabiiy o'zbek tilida, gap tartibini to'g'rilab yozing.\n"
+            "7. MAJBURIY: Faqat LOTIN (LATIN) alifbosida javob bering."
         )
 
         prompt = (
@@ -97,10 +93,21 @@ class TranslatorService:
         return self.restore_emojis(translated_result or protected_text, found_emojis, target_alphabet)
 
     def restore_emojis(self, text: str, original_emojis: list, target_alphabet: str) -> str:
+        # Kirillchaga o'girishdan oldin Lotincha himoyalangan manbalarni ajratib olish
+        protected_sources = re.findall(r'\[\[\[(.*?)\]\]\]', text)
+        for i, source in enumerate(protected_sources):
+            text = text.replace(f'[[[{source}]]]', f'____SRC_{i}____')
+
         if target_alphabet == 'cyrillic':
             text = self.to_cyrillic(text)
         elif target_alphabet == 'latin':
             text = self.to_latin(text)
+        
+        # Manbalarni qaytarish (Lotin holida qoladi)
+        for i, source in enumerate(protected_sources):
+            text = text.replace(f'____SRC_{i}____', source)
+
+        # Emojilarni qaytarish
         for i, emoji_code in enumerate(original_emojis):
             text = text.replace(f'____{i}____', emoji_code)
         return text
