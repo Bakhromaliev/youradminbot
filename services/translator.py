@@ -39,18 +39,28 @@ class TranslatorService:
         for i, emoji_code in enumerate(found_emojis):
             protected_text = protected_text.replace(emoji_code, f'____{i}____', 1)
 
+        # ISMLAR VA TALAFFUZ QOIDALARI (Professional sport jurnalistikasi uchun)
+        naming_logic = (
+            "ISMLARNI O'GIRISH QOIDASI:\n"
+            "- Yevropa va Janubiy Amerika futbolchilarining ismlarini O'zbekistondagi sport nashrlari (masalan, rus tili transliteratsiyasi) kabi yozing.\n"
+            "- 'C' harfi ko'p hollarda 'K' deb o'qiladi: Carvajal -> Karvaxal, Carreras -> Karreras, Courtois -> Kurtua.\n"
+            "- 'J' harfi ispancha ismlarda 'X' deb o'qiladi: Juan -> Xuan, Jose -> Xose.\n"
+            "- 'H' ba'zan 'X' yoki 'G' deb o'qilishi mumkin: Huijsen -> Xausen.\n"
+            "- Hech qachon 'Sarvajal' yoki 'Suan' kabi g'arbcha xato talaffuzda yozmang!"
+        )
+
         if is_twitter:
             system_instruction = (
-                "Siz professional sport jurnalistisiz. Twitter postini tahlil qiling.\n"
+                f"Siz professional sport jurnalistisiz. Twitter postini tahlil qiling.\n"
+                f"{naming_logic}\n"
                 "1. 'JUST IN', 'CONFIRMED', 'BREAKING' so'zlarini TARJIMA QILMANG.\n"
-                "2. Insayder/Manba ismidan '@' belgisini olib tashlang, ismni LOTINDA qoldiring.\n"
-                "3. Manbani alohida qatorga SOURCE: [[[Ism]]] ko'rinishida yozing.\n"
-                "4. Tarjimani o'ta tabiiy o'zbek tilida, gap tartibini to'g'rilab yozing.\n"
-                "5. Faqat LOTIN alifbosida, HTML teglarsiz javob bering."
+                "2. Insayder ismidan '@'ni olib, ismni LOTINDA qoldiring. Manbani SOURCE: [[[Ism]]] ko'rinishida yozing.\n"
+                "3. Tarjimani o'ta tabiiy, ona tilidagidek yozing. Faqat LOTINDA, HTML teglarsiz javob bering."
             )
         else:
             system_instruction = (
-                "Siz o'zbek sport blogerisiz. Futbol yangiliklarini tabiiy tarjima qiling.\n"
+                f"Siz o'zbek sport blogerisiz. Futbol yangiliklarini tabiiy tarjima qiling.\n"
+                f"{naming_logic}\n"
                 "Gap tartibini to'g'rilang. HTML teglarsiz, faqat toza matn bering. Faqat LOTINDA javob bering."
             )
 
@@ -148,8 +158,6 @@ class TranslatorService:
         for a in ["’", "‘", "`", "´", "ʻ"]: text = text.replace(a, "'")
         text = re.sub(r'(^|[^a-zA-Z])E', r'\1Э', text)
         text = re.sub(r'(^|[^a-zA-Z])e', r'\1э', text)
-        
-        # Birikmalar (Tartib va barcha variantlar juda muhim!)
         complex_repl = [
             ("O'", 'Ў'), ("o'", 'ў'), ("G'", 'Ғ'), ("g'", 'ғ'),
             ("A'", 'АЪ'), ("a'", 'аъ'),
@@ -161,10 +169,7 @@ class TranslatorService:
             ('YE', 'Е'), ('Ye', 'Е'), ('ye', 'е'),
             ('TS', 'Ц'), ('Ts', 'Ц'), ('ts', 'ц')
         ]
-        res = text
-        for s, d in complex_repl: res = res.replace(s, d)
-
-        # Yakka harflar
+        for s, d in complex_repl: text = text.replace(s, d)
         single_repl = {
             'A': 'А', 'B': 'Б', 'D': 'Д', 'F': 'Ф', 'G': 'Г', 'H': 'Ҳ', 'I': 'И', 'J': 'Ж', 'K': 'К',
             'L': 'Л', 'M': 'М', 'N': 'Н', 'O': 'О', 'P': 'П', 'Q': 'Қ', 'R': 'Р', 'S': 'С', 'T': 'Т',
@@ -173,5 +178,5 @@ class TranslatorService:
             'l': 'л', 'm': 'м', 'n': 'н', 'o': 'о', 'p': 'п', 'q': 'қ', 'r': 'р', 's': 'с', 't': 'т',
             'u': 'у', 'v': 'в', 'x': 'х', 'y': 'й', 'z': 'з', 'e': 'е', "'": 'ъ'
         }
-        for s, d in single_repl.items(): res = res.replace(s, d)
-        return res
+        for s, d in single_repl.items(): text = text.replace(s, d)
+        return text
