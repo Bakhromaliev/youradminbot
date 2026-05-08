@@ -39,21 +39,19 @@ class TranslatorService:
         for i, emoji_code in enumerate(found_emojis):
             protected_text = protected_text.replace(emoji_code, f'____{i}____', 1)
 
-        # TWITTER UCHUN MAXSUS QOIDALAR
         if is_twitter:
             system_instruction = (
                 "Siz professional sport jurnalistisiz. Twitter postini tahlil qiling.\n"
-                "1. 'JUST IN', 'CONFIRMED', 'BREAKING' so'zlarini TARJIMA QILMANG, ularni so'z boshida qoldiring.\n"
+                "1. 'JUST IN', 'CONFIRMED', 'BREAKING' so'zlarini TARJIMA QILMANG.\n"
                 "2. Insayder/Manba ismidan '@' belgisini olib tashlang, ismni LOTINDA qoldiring.\n"
                 "3. Manbani alohida qatorga SOURCE: [[[Ism]]] ko'rinishida yozing.\n"
-                "4. Tarjimani ona tilidagidek, gap tartibini to'g'rilab yozing.\n"
+                "4. Tarjimani o'ta tabiiy o'zbek tilida, gap tartibini to'g'rilab yozing.\n"
                 "5. Faqat LOTIN alifbosida, HTML teglarsiz javob bering."
             )
         else:
-            # TELEGRAM UCHUN ODDIY TARJIMA
             system_instruction = (
-                "Siz o'zbek sport blogerisiz. Futbol yangiliklarini ona tilidagi kabi tabiiy tarjima qiling.\n"
-                "Gap tartibini to'g'rilang. Hech qanday HTML teglarsiz, faqat toza matn bering. Faqat LOTINDA javob bering."
+                "Siz o'zbek sport blogerisiz. Futbol yangiliklarini tabiiy tarjima qiling.\n"
+                "Gap tartibini to'g'rilang. HTML teglarsiz, faqat toza matn bering. Faqat LOTINDA javob bering."
             )
 
         prompt = (
@@ -98,16 +96,12 @@ class TranslatorService:
         if not translated_result:
             return self.restore_emojis(protected_text, found_emojis, target_alphabet)
 
-        # TOZALASH
         translated_result = translated_result.replace('<', '&lt;').replace('>', '&gt;')
 
-        # TWITTER FORMATLASH (faqat is_twitter bo'lsa)
         if is_twitter:
             for kw in ["JUST IN", "CONFIRMED", "BREAKING"]:
                 translated_result = translated_result.replace(f"{kw}:", f"<b>{kw}:</b>")
                 translated_result = translated_result.replace(kw, f"<b>{kw}:</b>")
-            
-            # Emojilar
             translated_result = translated_result.replace("<b>JUST IN:</b>", "🚨 <b>JUST IN:</b>")
             translated_result = translated_result.replace("<b>CONFIRMED:</b>", "✅ <b>CONFIRMED:</b>")
             translated_result = translated_result.replace("<b>BREAKING:</b>", "📰 <b>BREAKING:</b>")
@@ -154,14 +148,23 @@ class TranslatorService:
         for a in ["’", "‘", "`", "´", "ʻ"]: text = text.replace(a, "'")
         text = re.sub(r'(^|[^a-zA-Z])E', r'\1Э', text)
         text = re.sub(r'(^|[^a-zA-Z])e', r'\1э', text)
+        
+        # Birikmalar (Tartib va barcha variantlar juda muhim!)
         complex_repl = [
             ("O'", 'Ў'), ("o'", 'ў'), ("G'", 'Ғ'), ("g'", 'ғ'),
             ("A'", 'АЪ'), ("a'", 'аъ'),
-            ('Sh', 'Ш'), ('sh', 'ш'), ('Ch', 'Ч'), ('ch', 'ч'),
-            ('Yo', 'Ё'), ('yo', 'ё'), ('Yu', 'Ю'), ('yu', 'ю'),
-            ('Ya', 'Я'), ('ya', 'я'), ('Ye', 'Е'), ('ye', 'е'), ('Ts', 'Ц'), ('ts', 'ц')
+            ('SH', 'Ш'), ('Sh', 'Ш'), ('sh', 'ш'),
+            ('CH', 'Ч'), ('Ch', 'Ч'), ('ch', 'ч'),
+            ('YO', 'Ё'), ('Yo', 'Ё'), ('yo', 'ё'),
+            ('YU', 'Ю'), ('Yu', 'Ю'), ('yu', 'ю'),
+            ('YA', 'Я'), ('Ya', 'Я'), ('ya', 'я'),
+            ('YE', 'Е'), ('Ye', 'Е'), ('ye', 'е'),
+            ('TS', 'Ц'), ('Ts', 'Ц'), ('ts', 'ц')
         ]
-        for s, d in complex_repl: text = text.replace(s, d)
+        res = text
+        for s, d in complex_repl: res = res.replace(s, d)
+
+        # Yakka harflar
         single_repl = {
             'A': 'А', 'B': 'Б', 'D': 'Д', 'F': 'Ф', 'G': 'Г', 'H': 'Ҳ', 'I': 'И', 'J': 'Ж', 'K': 'К',
             'L': 'Л', 'M': 'М', 'N': 'Н', 'O': 'О', 'P': 'П', 'Q': 'Қ', 'R': 'Р', 'S': 'С', 'T': 'Т',
@@ -170,5 +173,5 @@ class TranslatorService:
             'l': 'л', 'm': 'м', 'n': 'н', 'o': 'о', 'p': 'п', 'q': 'қ', 'r': 'р', 's': 'с', 't': 'т',
             'u': 'у', 'v': 'в', 'x': 'х', 'y': 'й', 'z': 'з', 'e': 'е', "'": 'ъ'
         }
-        for s, d in single_repl.items(): text = text.replace(s, d)
-        return text
+        for s, d in single_repl.items(): res = res.replace(s, d)
+        return res
