@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 class TranslatorService:
     def __init__(self):
-        # Gemini
+        # Gemini init
         api_key = os.getenv("GEMINI_API_KEY")
         if api_key: api_key = api_key.strip()
         self.model_names = []
@@ -22,7 +22,7 @@ class TranslatorService:
                 self.model_names = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
             except Exception: pass
         
-        # OpenAI
+        # OpenAI init
         raw_key = os.getenv("OPENAI_API_KEY")
         self.openai_key = raw_key.strip() if raw_key else None
 
@@ -40,17 +40,23 @@ class TranslatorService:
             protected_text = protected_text.replace(emoji_code, f'____{i}____', 1)
 
         system_instruction = (
-            "Siz O'zbekistondagi eng mashhur futbol blogerisiz. Vazifangiz xorijiy xabarlarni O'zbekiston muxlislari uchun ONA TILIDAGI kabi tabiiy yetkazish.\n"
-            "MUHIM QOIDALAR:\n"
-            "- So'zma-so'z tarjima qilmang! Gaplarni o'zbek tili qoidalariga (Ega, to'ldiruvchi, kesim tartibiga) moslab, mazmunan qayta yozing.\n"
-            "- Xuddi o'zbek tilida yozilgan postdek tuyulsin. Chet ellikning talaffuzi sezilmasin.\n"
-            "- 'Carvajal' -> 'Karvaxal', 'Real Madrid' -> 'Real Madrid'.\n"
-            "- Sport terminologiyasidan professional foydalaning.\n"
-            "- MAJBURIY: Faqat LOTIN (LATIN) alifbosida, eng sifatli o'zbek tilida javob bering."
+            "Siz professional sport jurnalisti va insayder yangiliklari mutaxassisiz.\n"
+            "TWITTER POSTLARINI FORMATLASH QOIDALARI:\n"
+            "1. Agar matnda 'JUST IN', 'CONFIRMED', 'BREAKING' kabi so'zlar bo'lsa, ularni TARJIMA QILMANG.\n"
+            "2. Ularni quyidagicha formatlang:\n"
+            "   - 'JUST IN' -> 🚨 <b>JUST IN:</b>\n"
+            "   - 'CONFIRMED' -> ✅ <b>CONFIRMED:</b>\n"
+            "   - 'BREAKING' -> 📰 <b>BREAKING:</b>\n"
+            "3. Ushbu so'zdan keyin ikki nuqta qo'yib, o'zbek tili grammatikasiga mos tarjimani yozing.\n"
+            "4. Matn ichidagi INSAYDER yoki MANBANI (masalan: @FabrizioRomano, via Mario Cortegana) toping.\n"
+            "5. Insayderni tarjima oxirida, yangi qatorda quyidagicha yozing:\n"
+            "   📰 [Manba nomi]\n"
+            "6. Jami tarjimani o'zbek tilida, so'zlashuv blogeri uslubida, o'ta tabiiy qiling.\n"
+            "7. MAJBURIY: Faqat LOTIN alifbosida va HTML teglari (<b>) bilan javob bering."
         )
 
         prompt = (
-            f"Quyidagi futbol xabarini o'zbek tiliga ona tilida so'zlashuvchi bloger uslubida, gap tartibini to'g'rilab tarjima qiling:\n\n"
+            f"Quyidagi Twitter postini tahlil qiling va yuqoridagi qoidalar bo'yicha tarjima qiling:\n\n"
             f"MATN:\n{protected_text}"
         )
 
@@ -72,7 +78,7 @@ class TranslatorService:
                                 {"role": "system", "content": system_instruction},
                                 {"role": "user", "content": prompt}
                             ],
-                            "temperature": 0.5
+                            "temperature": 0.4
                         }
                     )
                     if response.status_code == 200:
