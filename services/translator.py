@@ -20,9 +20,7 @@ class TranslatorService:
                 genai.configure(api_key=api_key)
                 models = genai.list_models()
                 self.model_names = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
-                logger.info(f"Gemini models found: {len(self.model_names)}")
-            except Exception as e:
-                logger.error(f"Gemini init error: {e}")
+            except Exception: pass
         
         # OpenAI
         raw_key = os.getenv("OPENAI_API_KEY")
@@ -41,17 +39,18 @@ class TranslatorService:
         for i, emoji_code in enumerate(found_emojis):
             protected_text = protected_text.replace(emoji_code, f'____{i}____', 1)
 
-        lang_map = {'uz': 'Uzbek', 'ru': 'Russian', 'en': 'English'}
-        target_name = lang_map.get(target_lang, 'Uzbek')
-
         system_instruction = (
-            "Siz o'zbek sport blogerisiz. Futbol yangiliklarini jonli tilda tarjima qiling.\n"
-            "USLUB: Telegram kanaldagi kabi.\n"
-            "QOIDA: Faqat LOTIN (LATIN) harflarida javob bering."
+            "Siz O'zbekistondagi eng mashhur futbol blogerisiz. Vazifangiz xorijiy xabarlarni O'zbekiston muxlislari uchun ONA TILIDAGI kabi tabiiy yetkazish.\n"
+            "MUHIM QOIDALAR:\n"
+            "- So'zma-so'z tarjima qilmang! Gaplarni o'zbek tili qoidalariga (Ega, to'ldiruvchi, kesim tartibiga) moslab, mazmunan qayta yozing.\n"
+            "- Xuddi o'zbek tilida yozilgan postdek tuyulsin. Chet ellikning talaffuzi sezilmasin.\n"
+            "- 'Carvajal' -> 'Karvaxal', 'Real Madrid' -> 'Real Madrid'.\n"
+            "- Sport terminologiyasidan professional foydalaning.\n"
+            "- MAJBURIY: Faqat LOTIN (LATIN) alifbosida, eng sifatli o'zbek tilida javob bering."
         )
 
         prompt = (
-            f"Quyidagi xabarni {target_name} tiliga faqat lotin alifbosida tarjima qiling:\n\n"
+            f"Quyidagi futbol xabarini o'zbek tiliga ona tilida so'zlashuvchi bloger uslubida, gap tartibini to'g'rilab tarjima qiling:\n\n"
             f"MATN:\n{protected_text}"
         )
 
@@ -73,13 +72,12 @@ class TranslatorService:
                                 {"role": "system", "content": system_instruction},
                                 {"role": "user", "content": prompt}
                             ],
-                            "temperature": 0.4
+                            "temperature": 0.5
                         }
                     )
                     if response.status_code == 200:
                         translated_result = response.json()['choices'][0]['message']['content'].strip()
-            except Exception:
-                logger.error("OpenAI error")
+            except Exception: pass
 
         # 2. Gemini Fallback
         if not translated_result and self.model_names:
@@ -88,8 +86,7 @@ class TranslatorService:
                 resp = model.generate_content(prompt)
                 if resp and resp.text:
                     translated_result = resp.text.strip()
-            except Exception:
-                logger.error("Gemini error")
+            except Exception: pass
 
         return self.restore_emojis(translated_result or protected_text, found_emojis, target_alphabet)
 
