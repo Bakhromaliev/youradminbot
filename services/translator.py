@@ -27,9 +27,8 @@ class TranslatorService:
         self.openai_key = raw_key.strip() if raw_key else None
 
     async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin', is_twitter: bool = False) -> str:
-        if not text: return text
-        
-        if not re.search(r'[a-zA-Zа-яА-ЯёЁўЎғҒқҚҳҲ]', text):
+        # Arab/Fors yoki Lotin/Kirill harflari borligini tekshirish
+        if not re.search(r'[a-zA-Zа-яА-ЯёЁўЎғҒқҚҳҲ\u0600-\u06FF]', text):
             return text
 
         # Emojilarni HIMOYALASH
@@ -42,11 +41,11 @@ class TranslatorService:
         # ISMLAR VA TALAFFUZ QOIDALARI (Professional sport jurnalistikasi uchun)
         naming_logic = (
             "ISMLARNI O'GIRISH QOIDASI:\n"
-            "- Yevropa va Janubiy Amerika futbolchilarining ismlarini O'zbekistondagi sport nashrlari (masalan, rus tili transliteratsiyasi) kabi yozing.\n"
-            "- 'C' harfi ko'p hollarda 'K' deb o'qiladi: Carvajal -> Karvaxal, Carreras -> Karreras, Courtois -> Kurtua.\n"
-            "- 'J' harfi ispancha ismlarda 'X' deb o'qiladi: Juan -> Xuan, Jose -> Xose.\n"
-            "- 'H' ba'zan 'X' yoki 'G' deb o'qilishi mumkin: Huijsen -> Xausen.\n"
-            "- Hech qachon 'Sarvajal' yoki 'Suan' kabi g'arbcha xato talaffuzda yozmang!"
+            "- Yevropa futbolchilarining ismlarini o'zbek sport nashrlari kabi yozing: Carvajal -> Karvaxal, Courtois -> Kurtua.\n"
+            "- Arab/Fors futbolchilari va klublarini professional o'zbekcha yozing: Al-Ittihad -> Al-Ittihod, Al-Hilal -> Al-Hilol.\n"
+            "- 'Cristiano Ronaldo' ni har doim 'Krishtianu Ronaldu' deb yozing.\n"
+            "- 'Lionel Messi' ni har doim 'Lionel Messi' deb yozing.\n"
+            "- Ismlar va nashr nomlari har doim LOTIN alifbosida bo'lsin."
         )
 
         if is_twitter:
