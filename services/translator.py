@@ -10,12 +10,12 @@ from bot_database.models import BotSettings
 logger = logging.getLogger(__name__)
 
 class TranslatorService:
-    def __init__(self):
+    def __init__(self, gemini_key: str = None, openai_key: str = None):
         # Gemini init
-        api_key = os.getenv("GEMINI_API_KEY")
+        api_key = gemini_key or os.getenv("GEMINI_API_KEY")
         if api_key: api_key = api_key.strip()
         self.model_names = []
-        if api_key:
+        if api_key and api_key != "dummy":
             try:
                 genai.configure(api_key=api_key)
                 models = genai.list_models()
@@ -23,8 +23,8 @@ class TranslatorService:
             except Exception: pass
         
         # OpenAI init
-        raw_key = os.getenv("OPENAI_API_KEY")
-        self.openai_key = raw_key.strip() if raw_key else None
+        raw_key = openai_key or os.getenv("OPENAI_API_KEY")
+        self.openai_key = raw_key.strip() if raw_key and raw_key != "dummy" else None
 
     async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin', is_twitter: bool = False) -> str:
         # Arab/Fors yoki Lotin/Kirill harflari borligini tekshirish
