@@ -184,8 +184,11 @@ async def del_src_start(message: types.Message):
     async with AsyncSessionLocal() as session:
         user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
         user = user_res.scalar_one()
+        
+        # MultipleResultsFound xatosini oldini olish uchun .first() ishlatamiz
         source_res = await session.execute(select(Source).where(Source.user_id == user.id, Source.source_id == sid_text))
-        source = source_res.scalar_one_or_none()
+        source = source_res.scalars().first()
+        
         if source:
             builder = InlineKeyboardBuilder()
             builder.row(types.InlineKeyboardButton(text="✅ Ha, o'chirilsin", callback_data=f"delete_source_{source.id}"))
