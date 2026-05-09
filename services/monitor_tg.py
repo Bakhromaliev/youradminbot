@@ -95,9 +95,8 @@ class TelegramMonitor:
         except Exception as e: logger.error(f"Process error: {e}", exc_info=True)
 
     async def check_user_access(self, session, user):
-        """Foydalanuvchi tasdiqlanganligi va limitini tekshiradi"""
+        """Limitni tekshiradi"""
         if user.is_admin or user.is_vip: return True
-        if not user.is_approved: return False
         
         today = date.today()
         count_res = await session.execute(select(func.count(PendingPost.id)).where(

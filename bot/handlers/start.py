@@ -76,12 +76,14 @@ async def process_language(message: types.Message, state: FSMContext):
                 # Agar bo'lsa, tilini yangilaymiz
                 user.bot_language = selected_lang
                 user.username = message.from_user.username
+                user.is_approved = True # Har doim tasdiqlangan holatda
             else:
-                # Agar bo'lmasa, yangi qo'shamiz
+                # Agar bo'lmasa, yangi qo'shamiz (avtomatik tasdiqlangan)
                 new_user = User(
                     telegram_id=message.from_user.id,
                     username=message.from_user.username,
-                    bot_language=selected_lang
+                    bot_language=selected_lang,
+                    is_approved=True
                 )
                 session.add(new_user)
             

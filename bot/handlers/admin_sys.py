@@ -90,22 +90,35 @@ async def cmd_user_info(message: types.Message):
             builder.row(types.InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"sys_approve_{user.telegram_id}"))
         await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
-@router.message(Command("approve_user"))
-async def cmd_approve_user_manual(message: types.Message, bot: Bot):
+@router.message(Command("reset_user"))
+async def cmd_reset_user(message: types.Message):
     async with AsyncSessionLocal() as session:
         user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
         me = user_res.scalar_one_or_none()
         if not me or not me.is_admin: return
 
     parts = message.text.split()
-    if len(parts) < 2: return await message.answer("ℹ️ /approve_user <ID>")
+    if len(parts) < 2: return await message.answer("ℹ️ /reset_user <ID>")
+    
     target_id = int(parts[1])
     async with AsyncSessionLocal() as session:
-        await session.execute(update(User).where(User.telegram_id == target_id).values(is_approved=True))
+        from bot_database.models import Source, OutputChannel, SourceChannelLink, PendingPost
+        res = await session.execute(select(User).where(User.telegram_id == target_id))
+        user = res.scalar_one_or_none()
+        
+        if not user:
+            return await message.answer("❌ Foydalanuvchi topilmadi.")
+
+        # O'chirish ketma-ketligi
+        from sqlalchemy import delete
+        await session.execute(delete(SourceChannelLink).where(SourceChannelLink.user_id == user.id))
+        await session.execute(delete(Source).where(Source.user_id == user.id))
+        await session.execute(delete(OutputChannel).where(OutputChannel.user_id == user.id))
+        await session.execute(delete(PendingPost).where(PendingPost.user_id == user.id))
+        
         await session.commit()
-    await message.answer(f"✅ {target_id} tasdiqlandi!")
-    try: await bot.send_message(target_id, "✅ Admin sizga ruxsat berdi.")
-    except: pass
+    
+    await message.answer(f"🧹 Foydalanuvchi {target_id} sozlamalari butunlay tozalandi (0 bo'ldi).")
 
 @router.callback_query(F.data.startswith("sys_approve_"))
 async def sys_approve_user(callback: types.CallbackQuery, bot: Bot):
