@@ -102,17 +102,21 @@ async def cb_reset_user(callback: types.CallbackQuery):
     await perform_reset(callback.message, target_id)
 
 async def perform_reset(message: types.Message, target_id: int):
-    async with AsyncSessionLocal() as session:
-        res = await session.execute(select(User).where(User.telegram_id == target_id))
-        user = res.scalar_one_or_none()
-        if not user: return await message.answer("❌ Foydalanuvchi bazada yo'q.")
+    try:
+        async with AsyncSessionLocal() as session:
+            res = await session.execute(select(User).where(User.telegram_id == target_id))
+            user = res.scalar_one_or_none()
+            if not user: return await message.answer("❌ Foydalanuvchi bazada yo'q.")
 
-        await session.execute(delete(SourceChannelLink).where(SourceChannelLink.user_id == user.id))
-        await session.execute(delete(Source).where(Source.user_id == user.id))
-        await session.execute(delete(OutputChannel).where(OutputChannel.user_id == user.id))
-        await session.execute(delete(PendingPost).where(PendingPost.user_id == user.id))
-        await session.commit()
-    await message.answer(f"🧹 Foydalanuvchi {target_id} sozlamalari 0 qilindi.")
+            await session.execute(delete(SourceChannelLink).where(SourceChannelLink.user_id == user.id))
+            await session.execute(delete(Source).where(Source.user_id == user.id))
+            await session.execute(delete(OutputChannel).where(OutputChannel.user_id == user.id))
+            await session.execute(delete(PendingPost).where(PendingPost.user_id == user.id))
+            await session.commit()
+        await message.answer(f"✅ Foydalanuvchi {target_id} sozlamalari 0 qilindi.")
+    except Exception as e:
+        logger.error(f"Reset error: {e}")
+        await message.answer(f"❌ Xatolik: {str(e)}\n\nIltimos, Render Shell'da SQL buyrug'ini bajarib ko'ring.")
 
 @router.callback_query(F.data.startswith("sys_approve_"))
 async def sys_approve_user(callback: types.CallbackQuery, bot: Bot):
