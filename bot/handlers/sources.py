@@ -187,21 +187,29 @@ async def del_src_start(message: types.Message):
     if len(parts) < 2: return
     content = parts[-1].strip() # '📺 @source'
     
-    s_type = 'telegram' if '📺' in content else 'twitter'
+    s_type = 'telegram' if '📺' in content else ('twitter' if '🐦' in content else None)
     sid_text = content.replace('📺', '').replace('🐦', '').strip()
     
     async with AsyncSessionLocal() as session:
         user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
         user = user_res.scalar_one()
         
-        # MultipleResultsFound xatosini oldini olish uchun aniq s_type bilan qidiramiz
-        source_res = await session.execute(select(Source).where(Source.user_id == user.id, Source.source_id == sid_text, Source.source_type == s_type))
+        # Agar s_type bo'lsa (yangi tugma), aniq qidiramiz
+        if s_type:
+            source_res = await session.execute(select(Source).where(Source.user_id == user.id, Source.source_id == sid_text, Source.source_type == s_type))
+        else:
+            # Agar s_type bo'lmasa (eski tugma), faqat nomi bilan qidiramiz
+            source_res = await session.execute(select(Source).where(Source.user_id == user.id, Source.source_id == sid_text))
+        
         source = source_res.scalars().first()
         
         if source:
+            s_display_type = source.source_type
             builder = InlineKeyboardBuilder()
             builder.row(types.InlineKeyboardButton(text="✅ Ha, o'chirilsin", callback_data=f"delete_source_{source.id}"))
-            await message.answer(f"⚠️ <b>{sid_text}</b> ({s_type}) manbasini o'chirasizmi?", reply_markup=builder.as_markup(), parse_mode="HTML")
+            await message.answer(f"⚠️ <b>{sid_text}</b> ({s_display_type}) manbasini o'chirasizmi?", reply_markup=builder.as_markup(), parse_mode="HTML")
+        else:
+            await message.answer("❌ Manba topilmadi. Iltimos, ro'yxatni yangilang (Orqaga qaytib kiring).")
 
 @router.callback_query(F.data.startswith("delete_source_"))
 async def del_src_final(callback: types.CallbackQuery, state: FSMContext):
