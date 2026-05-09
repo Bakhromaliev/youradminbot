@@ -96,10 +96,10 @@ async def cmd_reset_user(message: types.Message):
 
 @router.callback_query(F.data.startswith("sys_reset_"))
 async def cb_reset_user(callback: types.CallbackQuery):
+    await callback.answer("⏳ Tozalanmoqda...")
     if not await is_user_admin(callback.from_user.id): return
     target_id = int(callback.data.split("_")[-1])
     await perform_reset(callback.message, target_id)
-    await callback.answer("✅ Tozalandi")
 
 async def perform_reset(message: types.Message, target_id: int):
     async with AsyncSessionLocal() as session:
