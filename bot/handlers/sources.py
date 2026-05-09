@@ -196,11 +196,15 @@ async def del_src_start(message: types.Message):
 
 @router.callback_query(F.data.startswith("delete_source_"))
 async def del_src_final(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer("⏳ O'chirilmoqda...")
     sid = int(callback.data.split("_")[-1])
     async with AsyncSessionLocal() as session:
+        from sqlalchemy import delete
         await session.execute(delete(Source).where(Source.id == sid))
         await session.commit()
-    await callback.message.delete()
+    
+    try: await callback.message.delete()
+    except: pass
     await list_sources_msg(callback.message, state, override_text="✅ Manba o'chirildi.")
 
 @router.message(lambda m: m.text in [get_text('btn_main_menu', 'uz'), get_text('btn_main_menu', 'ru'), get_text('btn_main_menu', 'en')])

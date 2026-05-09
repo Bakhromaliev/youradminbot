@@ -48,10 +48,10 @@ class OutputChannel(Base):
 class SourceChannelLink(Base):
     __tablename__ = "bot_source_links"
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("bot_users.id"))
-    source_id = Column(Integer, ForeignKey("bot_sources.id")) # Source ID ga bog'lanadi
+    user_id = Column(Integer, ForeignKey("bot_users.id", ondelete="CASCADE"))
+    source_id = Column(Integer, ForeignKey("bot_sources.id", ondelete="CASCADE")) # Source ID ga bog'lanadi
     source_channel_id = Column(String) # Monitor uchun @username
-    channel_db_id = Column(Integer, ForeignKey("bot_output_channels.id"))
+    channel_db_id = Column(Integer, ForeignKey("bot_output_channels.id", ondelete="CASCADE"))
     
     source = relationship("Source", back_populates="links")
     output_channel = relationship("OutputChannel", back_populates="links")
