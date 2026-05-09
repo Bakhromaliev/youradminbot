@@ -115,10 +115,12 @@ async def view_source_kb(message: types.Message, state: FSMContext):
             ch = ch_res.scalar_one_or_none()
             ch_label = ch.channel_name if ch and ch.channel_name else "Kanal"
         builder.row(types.KeyboardButton(text=f"🔗 {ch_label} (Sozlash)"))
+    
+    s_icon = '📺' if source.source_type == 'telegram' else '🐦'
     builder.row(types.KeyboardButton(text=f"➕ {get_text('btn_link_channel', lang)}"))
-    builder.row(types.KeyboardButton(text=f"🗑 Manbani o'chirish: {source.source_id}"))
+    builder.row(types.KeyboardButton(text=f"🗑 Manbani o'chirish: {s_icon} {source.source_id}"))
     builder.row(types.KeyboardButton(text="⬅️ Orqaga"))
-    await message.answer(f"📦 <b>Manba: {source.source_id}</b>\n\nQaysi kanalni manbadan uzmoqchisiz?", reply_markup=builder.as_markup(resize_keyboard=True), parse_mode="HTML")
+    await message.answer(f"{s_icon} <b>Manba: {source.source_id}</b>\n\nQaysi kanalni manbadan uzmoqchisiz?", reply_markup=builder.as_markup(resize_keyboard=True), parse_mode="HTML")
 
 # --- 4. UZISH (CONFIRMATION) ---
 @router.message(SourceStates.viewing_source, F.text.startswith("🔗 "))
@@ -180,19 +182,26 @@ async def finalize_link(message: types.Message, state: FSMContext):
 
 @router.message(F.text.startswith('🗑 Manbani o\'chirish'))
 async def del_src_start(message: types.Message):
-    sid_text = message.text.split(":")[-1].strip()
+    # '🗑 Manbani o'chirish: 📺 @source' yoki '🗑 Manbani o'chirish: 🐦 source'
+    parts = message.text.split(":")
+    if len(parts) < 2: return
+    content = parts[-1].strip() # '📺 @source'
+    
+    s_type = 'telegram' if '📺' in content else 'twitter'
+    sid_text = content.replace('📺', '').replace('🐦', '').strip()
+    
     async with AsyncSessionLocal() as session:
         user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
         user = user_res.scalar_one()
         
-        # MultipleResultsFound xatosini oldini olish uchun .first() ishlatamiz
-        source_res = await session.execute(select(Source).where(Source.user_id == user.id, Source.source_id == sid_text))
+        # MultipleResultsFound xatosini oldini olish uchun aniq s_type bilan qidiramiz
+        source_res = await session.execute(select(Source).where(Source.user_id == user.id, Source.source_id == sid_text, Source.source_type == s_type))
         source = source_res.scalars().first()
         
         if source:
             builder = InlineKeyboardBuilder()
             builder.row(types.InlineKeyboardButton(text="✅ Ha, o'chirilsin", callback_data=f"delete_source_{source.id}"))
-            await message.answer(f"⚠️ <b>{sid_text}</b> manbasini o'chirasizmi?", reply_markup=builder.as_markup(), parse_mode="HTML")
+            await message.answer(f"⚠️ <b>{sid_text}</b> ({s_type}) manbasini o'chirasizmi?", reply_markup=builder.as_markup(), parse_mode="HTML")
 
 @router.callback_query(F.data.startswith("delete_source_"))
 async def del_src_final(callback: types.CallbackQuery, state: FSMContext):
