@@ -62,6 +62,19 @@ class TelegramMonitor:
         asyncio.create_task(self.sync_sources_periodically())
         await self.client.run_until_disconnected()
 
+    async def join_source(self, source_id: str):
+        """Yangi manbaga a'zo bo'lish (Handlerni chaqirganda)"""
+        from telethon.tl.functions.channels import JoinChannelRequest
+        if not source_id: return
+        clean_id = source_id.replace('https://t.me/', '').replace('t.me/', '').replace('@', '').strip()
+        try:
+            await self.client(JoinChannelRequest(clean_id))
+            logger.info(f"Successfully joined to {clean_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to join {clean_id}: {e}")
+            return False
+
     async def sync_sources_periodically(self):
         from telethon.tl.functions.channels import JoinChannelRequest
         while True:
