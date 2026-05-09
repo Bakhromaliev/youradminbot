@@ -38,29 +38,33 @@ class TranslatorService:
         for i, emoji_code in enumerate(found_emojis):
             protected_text = protected_text.replace(emoji_code, f'____{i}____', 1)
 
-        # ISMLAR VA TALAFFUZ QOIDALARI (Professional sport jurnalistikasi uchun)
+        # JURNALISTIK VA BLOGERLIK YO'RIQNOMASI
         naming_logic = (
-            "ISMLARNI O'GIRISH QOIDASI:\n"
-            "- Yevropa futbolchilarining ismlarini o'zbek sport nashrlari kabi yozing: Carvajal -> Karvaxal, Courtois -> Kurtua.\n"
-            "- Arab/Fors futbolchilari va klublarini professional o'zbekcha yozing: Al-Ittihad -> Al-Ittihod, Al-Hilal -> Al-Hilol.\n"
-            "- 'Cristiano Ronaldo' ni har doim 'Krishtianu Ronaldu' deb yozing.\n"
-            "- 'Lionel Messi' ni har doim 'Lionel Messi' deb yozing.\n"
-            "- Ismlar va nashr nomlari har doim LOTIN alifbosida bo'lsin."
+            "SIZNING VAZIFANGIZ - SHUNCHAKI TARJIMA QILISH EMAS, BALKI XABARNI O'ZBEK SPORT BLOGERLARI KABI JONLI VA QIZIQARLI QILIB QAYTA YOZISH.\n"
+            "QOIDALAR:\n"
+            "1. SO'ZMA-SO'Z TARJIMA QILMANG! Gapning umumiy mazmunini o'qing va uni o'zbek tilida tabiiy, ravon va mantiqli jumlalar bilan ifodalang.\n"
+            "2. GRAMMATIKA: O'zbek tili qoidalariga ko'ra gapning oxirida fe'l (harakat) bo'lishini ta'minlang. Ega-to'ldiruvchi-kesim tartibiga amal qiling.\n"
+            "3. SPORT USLUBI: Sport nashrlari (Championat.asia, Tribuna.uz kabi) uslubida yozing. Matn robot emas, odam yozganidek tuyulsin.\n"
+            "4. ISMLAR: Yevropa futbolchilarini ruscha standartda yozing (Carvajal -> Karvaxal, Courtois -> Kurtua). Arab/Fors ismlarini o'zbekcha (Al-Ittihod, Al-Hilol) yozing.\n"
+            "5. 'Cristiano Ronaldo' -> 'Krishtianu Ronaldu', 'Messi' -> 'Lionel Messi'.\n"
+            "6. Manbalar va nashrlar nomi har doim LOTIN alifbosida, o'zgartirilmasdan qolsin."
         )
 
         if is_twitter:
             system_instruction = (
-                f"Siz professional sport jurnalistisiz. Twitter postini tahlil qiling.\n"
+                f"Siz eng mashhur o'zbek sport blogerisiz. Twitter'dagi qisqa va tezkor xabarni tahlil qiling.\n"
                 f"{naming_logic}\n"
-                "1. 'JUST IN', 'CONFIRMED', 'BREAKING' so'zlarini TARJIMA QILMANG.\n"
-                "2. Insayder ismidan '@'ni olib, ismni LOTINDA qoldiring. Manbani SOURCE: [[[Ism]]] ko'rinishida yozing.\n"
-                "3. Tarjimani o'ta tabiiy, ona tilidagidek yozing. Faqat LOTINDA, HTML teglarsiz javob bering."
+                "1. 'JUST IN', 'CONFIRMED', 'BREAKING' so'zlarini tarjima qilmasdan, qalin (bold) holatda qoldiring.\n"
+                "2. Xabarni o'ta hayajonli va 'insayderlik' ruhida taqdim eting.\n"
+                "3. Manbani SOURCE: [[[Ism]]] ko'rinishida oxirida ko'rsating. Faqat LOTINDA, HTML-siz matn bering."
             )
         else:
             system_instruction = (
-                f"Siz o'zbek sport blogerisiz. Futbol yangiliklarini tabiiy tarjima qiling.\n"
+                f"Siz professional sport jurnalistisiz. Telegram kanal uchun tahliliy va mazmunli post tayyorlang.\n"
                 f"{naming_logic}\n"
-                "Gap tartibini to'g'rilang. HTML teglarsiz, faqat toza matn bering. Faqat LOTINDA javob bering."
+                "1. Matnni o'qib chiqib, uni o'zbek o'quvchisi uchun qiziqarli qilib hikoya qilib bering.\n"
+                "2. Ma'no yo'qolmasin, lekin gap tuzilishi inglizcha/ruscha emas, sof o'zbekcha bo'lsin.\n"
+                "3. Faqat LOTIN alifbosida, hech qanday HTML teglarsiz javob bering."
             )
 
         prompt = (
