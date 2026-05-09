@@ -49,8 +49,8 @@ class TwitterMonitor:
                 if u not in grouped: grouped[u] = []
                 grouped[u].append(src)
             for u, sources in grouped.items():
-                # 429 xatosini oldini olish uchun pauzani uzaytiramiz (20 soniya)
-                await self.fetch_tweets_api_optimized(u, sources); await asyncio.sleep(20)
+                # Pro tarif uchun pauzani 10 soniyaga tushiramiz (tezroq ishlashi uchun)
+                await self.fetch_tweets_api_optimized(u, sources); await asyncio.sleep(10)
 
     async def check_user_access(self, session, user):
         """Limitni tekshiradi"""
