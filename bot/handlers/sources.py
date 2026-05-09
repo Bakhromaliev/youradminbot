@@ -71,14 +71,20 @@ async def add_source_start(message: types.Message, state: FSMContext):
 
 @router.message(SourceStates.waiting_for_source_id)
 async def add_src_save(message: types.Message, state: FSMContext, tg_monitor=None):
-    # Bekor qilish allaqachon yuqoridagi handler orqali list_sources_msg ga ketadi
     data = await state.get_data()
     src_id = message.text.strip()
     async with AsyncSessionLocal() as session:
         user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
         user = user_res.scalar_one()
+        
+        # Tekshiramiz: bu manba foydalanuvchida allaqachon bormi?
+        existing = await session.execute(select(Source).where(Source.user_id == user.id, Source.source_id == src_id))
+        if existing.scalar_one_or_none():
+            return await list_sources_msg(message, state, override_text="⚠️ Bu manba allaqachon qo'shilgan!")
+
         new_src = Source(user_id=user.id, source_type=data['source_type'], source_id=src_id, source_name=src_id)
         session.add(new_src); await session.commit()
+    
     if data['source_type'] == 'telegram' and tg_monitor:
         await tg_monitor.join_source(src_id)
     await list_sources_msg(message, state, override_text="✅ Manba muvaffaqiyatli qo'shildi!")
@@ -91,8 +97,11 @@ async def view_source_kb(message: types.Message, state: FSMContext):
     async with AsyncSessionLocal() as session:
         user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
         user = user_res.scalar_one()
+        
+        # MultipleResultsFound xatosini oldini olish uchun .first() ishlatamiz
         source_res = await session.execute(select(Source).where(Source.user_id == user.id, Source.source_id == source_id_text))
-        source = source_res.scalar_one_or_none()
+        source = source_res.scalars().first()
+        
         if not source: return
         await state.update_data(current_view_source_id=source.id)
         await state.set_state(SourceStates.viewing_source)
