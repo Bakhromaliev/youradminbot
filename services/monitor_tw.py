@@ -3,8 +3,8 @@ import logging
 import asyncio
 import httpx
 import re
-from datetime import datetime
-from sqlalchemy import select
+from datetime import datetime, date
+from sqlalchemy import select, func
 from bot_database.db import AsyncSessionLocal
 from bot_database.models import Source, SourceChannelLink, OutputChannel, User, PendingPost
 from services.translator import TranslatorService
@@ -17,10 +17,9 @@ logger = logging.getLogger(__name__)
 class TwitterMonitor:
     def __init__(self, translator: TranslatorService, bot: Bot, interval: int = 1800):
         self.translator = translator; self.bot = bot; self.interval = interval
-        self.api_key = os.getenv("RAPIDAPI_KEY");        self.api_host = os.getenv("RAPIDAPI_HOST")
+        self.api_key = os.getenv("RAPIDAPI_KEY"); self.api_host = os.getenv("RAPIDAPI_HOST")
 
     async def check_twitter_access(self, username: str):
-        """Twitter manbasini tekshiradi (Admin status buyrug'i uchun)"""
         if not self.api_key: return "❌ API Key yo'q"
         url = f"https://{self.api_host}/timeline.php"
         params = {"screenname": username.replace("@", "").strip()}
@@ -52,6 +51,23 @@ class TwitterMonitor:
             for u, sources in grouped.items():
                 await self.fetch_tweets_api_optimized(u, sources); await asyncio.sleep(5)
 
+    async def check_user_access(self, session, user):
+        """Foydalanuvchi tasdiqlanganligi va limitini tekshiradi"""
+        if user.is_admin or user.is_vip: return True
+        if not user.is_approved: return False
+        
+        today = date.today()
+        count_res = await session.execute(select(func.count(PendingPost.id)).where(
+            PendingPost.user_id == user.id, 
+            PendingPost.created_at >= datetime.combine(today, datetime.min.time())
+        ))
+        count = count_res.scalar() or 0
+        if count >= 5:
+            try: await self.bot.send_message(user.telegram_id, get_text('limit_reached', user.bot_language or 'uz'), parse_mode="HTML")
+            except: pass
+            return False
+        return True
+
     async def fetch_tweets_api_optimized(self, username, sources_list):
         url = f"https://{self.api_host}/timeline.php"; params = {"screenname": username}
         headers = {"X-RapidAPI-Key": self.api_key, "X-RapidAPI-Host": self.api_host}
@@ -59,8 +75,7 @@ class TwitterMonitor:
             async with httpx.AsyncClient(timeout=40) as client:
                 response = await client.get(url, headers=headers, params=params)
                 if response.status_code != 200 or not response.text.strip(): return
-                try:
-                    data = response.json()
+                try: data = response.json()
                 except Exception: return
                 
                 tweets = data.get('timeline', []) if isinstance(data, dict) else data
@@ -85,7 +100,7 @@ class TwitterMonitor:
             links = (await session.execute(select(SourceChannelLink).where(SourceChannelLink.source_id == source_obj.id))).scalars().all()
             if not links: return
             user = (await session.execute(select(User).where(User.id == source_obj.user_id))).scalar_one_or_none()
-            if not user: return
+            if not user or not await self.check_user_access(session, user): return
 
             translated = await self.translator.translate(text, target_lang='uz', target_alphabet='latin', is_twitter=True)
             db_text = f"{text}\n\n#tw_id:{tweet_id}"

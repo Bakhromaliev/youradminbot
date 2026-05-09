@@ -81,6 +81,23 @@ class TelegramMonitor:
         try: await self.process_single_message(message)
         except Exception as e: logger.error(f"Process error: {e}", exc_info=True)
 
+    async def check_user_access(self, session, user):
+        """Foydalanuvchi tasdiqlanganligi va limitini tekshiradi"""
+        if user.is_admin or user.is_vip: return True
+        if not user.is_approved: return False
+        
+        today = date.today()
+        count_res = await session.execute(select(func.count(PendingPost.id)).where(
+            PendingPost.user_id == user.id, 
+            PendingPost.created_at >= datetime.combine(today, datetime.min.time())
+        ))
+        count = count_res.scalar() or 0
+        if count >= 5:
+            try: await self.bot.send_message(user.telegram_id, get_text('limit_reached', user.bot_language or 'uz'), parse_mode="HTML")
+            except: pass
+            return False
+        return True
+
     async def process_media_group_after_delay(self, gid):
         await asyncio.sleep(3.0)
         messages = self.media_groups.pop(gid, [])
@@ -95,7 +112,6 @@ class TelegramMonitor:
             links = (await session.execute(stmt)).scalars().all()
             if not links: return
 
-            # Foydalanuvchilar va ularning manbalari bo'yicha guruhlaymiz
             user_sources = {}
             for link in links:
                 key = (link.user_id, link.source_id)
@@ -104,7 +120,8 @@ class TelegramMonitor:
 
             for (u_id, s_id), user_links in user_sources.items():
                 user = (await session.execute(select(User).where(User.id == u_id))).scalar_one()
-                # Tarjima (bir marta shu foydalanuvchi uchun)
+                if not await self.check_user_access(session, user): continue
+
                 clean_text = re.sub(r'https?://\S+|t\.me/\S+|tg://\S+|www\.\S+|@\w+', '', text).strip()
                 translated = await self.translator.translate(clean_text, target_lang='uz', target_alphabet='latin')
                 
@@ -148,6 +165,8 @@ class TelegramMonitor:
 
             for (u_id, s_id), user_links in user_sources.items():
                 user = (await session.execute(select(User).where(User.id == u_id))).scalar_one()
+                if not await self.check_user_access(session, user): continue
+
                 clean_text = re.sub(r'https?://\S+|t\.me/\S+|tg://\S+|www\.\S+|@\w+', '', text).strip()
                 translated = await self.translator.translate(clean_text, target_lang='uz', target_alphabet='latin')
                 translated = _decode_premium_emojis(translated)
@@ -168,7 +187,6 @@ class TelegramMonitor:
                     aiotypes.InlineKeyboardButton(text="❌ Rad etish", callback_data=f"reject_post_{post.id}"))
         builder.row(aiotypes.InlineKeyboardButton(text="📝 Tahrirlash", callback_data=f"edit_post_{post.id}"))
 
-        # Qaysi kanallarga ketishini aniqlaymiz
         async with AsyncSessionLocal() as session:
             channel_names = []
             for link in links:
