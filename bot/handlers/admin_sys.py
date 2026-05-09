@@ -1,9 +1,10 @@
 import logging
+import os
 from aiogram import Router, types, F, Bot
 from aiogram.filters import Command
-from sqlalchemy import update, select
+from sqlalchemy import update, select, delete
 from bot_database.db import AsyncSessionLocal
-from bot_database.models import User, Source
+from bot_database.models import User, Source, OutputChannel, SourceChannelLink, PendingPost
 from datetime import datetime, timedelta
 from services.monitor_tg import TelegramMonitor
 from services.monitor_tw import TwitterMonitor
@@ -12,29 +13,31 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 logger = logging.getLogger(__name__)
 router = Router()
 
+async def is_user_admin(user_id: int):
+    """Foydalanuvchi adminmi yoki yo'qligini tekshiradi (Super Adminni ham hisobga oladi)"""
+    SUPER_ADMIN_ID = int(os.getenv("ADMIN_ID", "1400240097"))
+    if user_id == SUPER_ADMIN_ID:
+        return True
+    async with AsyncSessionLocal() as session:
+        user_res = await session.execute(select(User).where(User.telegram_id == user_id))
+        user = user_res.scalar_one_or_none()
+        return user and user.is_admin
+
 @router.message(Command("admin_help"))
 async def cmd_admin_help(message: types.Message):
-    async with AsyncSessionLocal() as session:
-        user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
-        user = user_res.scalar_one_or_none()
-        if not user or not user.is_admin: return
-
+    if not await is_user_admin(message.from_user.id): return
     help_text = (
         "🛠 <b>Bot Admin Buyruqlari:</b>\n\n"
         "1. /sources_status — Barcha manbalarni tekshirish.\n"
         "2. /user_info <ID> — Foydalanuvchi holatini tekshirish.\n"
-        "3. /approve_user <ID> — Foydalanuvchini qo'lda tasdiqlash.\n"
+        "3. /reset_user <ID> — Foydalanuvchi sozlamalarini 0 qilish.\n"
         "4. /stats — Bot statistikasi.\n"
     )
     await message.answer(help_text, parse_mode="HTML")
 
 @router.message(Command("sources_status"))
 async def cmd_sources_status(message: types.Message, bot: Bot, tg_monitor: TelegramMonitor, tw_monitor: TwitterMonitor):
-    async with AsyncSessionLocal() as session:
-        user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
-        user = user_res.scalar_one_or_none()
-        if not user or not user.is_admin: return
-
+    if not await is_user_admin(message.from_user.id): return
     status_msg = "🔍 <b>Manbalar holatini tekshirish...</b>\n\n"
     waiting_msg = await message.answer(status_msg + "⏳ Iltimos kuting...", parse_mode="HTML")
 
@@ -57,17 +60,12 @@ async def cmd_sources_status(message: types.Message, bot: Bot, tg_monitor: Teleg
 
 @router.message(Command("user_info"))
 async def cmd_user_info(message: types.Message):
-    async with AsyncSessionLocal() as session:
-        user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
-        me = user_res.scalar_one_or_none()
-        if not me or not me.is_admin: return
-
+    if not await is_user_admin(message.from_user.id): return
     parts = message.text.split()
     if len(parts) < 2: return await message.answer("ℹ️ /user_info <ID>")
     
     target_id = int(parts[1])
     async with AsyncSessionLocal() as session:
-        from bot_database.models import OutputChannel
         res = await session.execute(select(User).where(User.telegram_id == target_id))
         user = res.scalar_one_or_none()
         if not user: return await message.answer("❌ Topilmadi.")
@@ -92,30 +90,20 @@ async def cmd_user_info(message: types.Message):
 
 @router.message(Command("reset_user"))
 async def cmd_reset_user(message: types.Message):
-    async with AsyncSessionLocal() as session:
-        user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
-        me = user_res.scalar_one_or_none()
-        if not me or not me.is_admin: return
-
+    if not await is_user_admin(message.from_user.id): return
     parts = message.text.split()
     if len(parts) < 2: return await message.answer("ℹ️ /reset_user <ID>")
     
     target_id = int(parts[1])
     async with AsyncSessionLocal() as session:
-        from bot_database.models import Source, OutputChannel, SourceChannelLink, PendingPost
         res = await session.execute(select(User).where(User.telegram_id == target_id))
         user = res.scalar_one_or_none()
-        
-        if not user:
-            return await message.answer("❌ Foydalanuvchi topilmadi.")
+        if not user: return await message.answer("❌ Foydalanuvchi bazada topilmadi.")
 
-        # O'chirish ketma-ketligi
-        from sqlalchemy import delete
         await session.execute(delete(SourceChannelLink).where(SourceChannelLink.user_id == user.id))
         await session.execute(delete(Source).where(Source.user_id == user.id))
         await session.execute(delete(OutputChannel).where(OutputChannel.user_id == user.id))
         await session.execute(delete(PendingPost).where(PendingPost.user_id == user.id))
-        
         await session.commit()
     
     await message.answer(f"🧹 Foydalanuvchi {target_id} sozlamalari butunlay tozalandi (0 bo'ldi).")
