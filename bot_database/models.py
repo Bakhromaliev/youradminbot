@@ -60,7 +60,7 @@ class PendingPost(Base):
     __tablename__ = "bot_pending_posts"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("bot_users.id"))
-    source_id = Column(Integer, ForeignKey("bot_sources.id")) # Link_id o'rniga Source_id
+    source_id = Column(Integer, ForeignKey("bot_sources.id", ondelete="CASCADE")) # Link_id o'rniga Source_id
     link_id = Column(Integer, ForeignKey("bot_source_links.id"), nullable=True) # Eski postlar uchun qoladi
     source_type = Column(String)
     original_text = Column(Text)
