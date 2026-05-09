@@ -55,10 +55,15 @@ async def process_admin_channel(message: types.Message, state: FSMContext, bot: 
         await state.clear()
         return await show_settings(message, state)
 
-    channel_id = message.text.strip()
+    channel_input = message.text.strip()
+    
+    # Agar raqam bo'lmasa va @ bilan boshlanmasa, @ qo'shib qo'yamiz
+    if not channel_input.startswith('@') and not (channel_input.startswith('-') or channel_input.isdigit()):
+        channel_input = f"@{channel_input}"
+
     try:
         # Bot u yerda adminmi?
-        chat = await bot.get_chat(channel_id)
+        chat = await bot.get_chat(channel_input)
         if chat.type not in ['channel', 'group', 'supergroup']:
             return await message.answer("❌ Bu yaroqli kanal yoki guruh emas.")
         
@@ -67,6 +72,7 @@ async def process_admin_channel(message: types.Message, state: FSMContext, bot: 
             return await message.answer("❌ Bot ushbu kanalda <b>ADMIN</b> emas. Iltimos, avval admin qilib, keyin qayta urinib ko'ring.", parse_mode="HTML")
         
         async with AsyncSessionLocal() as session:
+            # Biz har doim RAQAMLI ID ni saqlaymiz, bu eng ishonchli yo'l
             await session.execute(update(User).where(User.telegram_id == message.from_user.id).values(
                 admin_channel_id=str(chat.id),
                 admin_channel_name=chat.title
@@ -78,7 +84,7 @@ async def process_admin_channel(message: types.Message, state: FSMContext, bot: 
         
     except Exception as e:
         logger.error(f"Error connecting admin channel: {e}")
-        await message.answer("❌ Kanal topilmadi. Iltimos, ID yoki @username to'g'riligini va bot u yerda admin ekanligini tekshiring.")
+        await message.answer("❌ Kanal topilmadi. Iltimos, ID yoki @username to'g'riligini (masalan: <code>@kanalingiz</code> yoki raqamli ID) va bot u yerda admin ekanligini tekshiring.", parse_mode="HTML")
 
 @router.callback_query(F.data == "remove_admin_channel")
 async def remove_admin_channel(callback: types.CallbackQuery):
