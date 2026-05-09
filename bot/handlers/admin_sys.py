@@ -108,10 +108,11 @@ async def perform_reset(message: types.Message, target_id: int):
             user = res.scalar_one_or_none()
             if not user: return await message.answer("❌ Foydalanuvchi bazada yo'q.")
 
+            # O'chirish ketma-ketligi (Bog'liqliklarga qarab)
+            await session.execute(delete(PendingPost).where(PendingPost.user_id == user.id))
             await session.execute(delete(SourceChannelLink).where(SourceChannelLink.user_id == user.id))
             await session.execute(delete(Source).where(Source.user_id == user.id))
             await session.execute(delete(OutputChannel).where(OutputChannel.user_id == user.id))
-            await session.execute(delete(PendingPost).where(PendingPost.user_id == user.id))
             await session.commit()
         await message.answer(f"✅ Foydalanuvchi {target_id} sozlamalari 0 qilindi.")
     except Exception as e:
