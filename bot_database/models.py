@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, BigInteger
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
@@ -8,7 +8,7 @@ Base = declarative_base()
 class User(Base):
     __tablename__ = "bot_users"
     id = Column(Integer, primary_key=True)
-    telegram_id = Column(Integer, unique=True)
+    telegram_id = Column(BigInteger, unique=True)
     username = Column(String)
     bot_language = Column(String, default="uz")
     is_admin = Column(Boolean, default=False)
