@@ -68,12 +68,23 @@ async def process_language(message: types.Message, state: FSMContext):
     
     if selected_lang:
         async with AsyncSessionLocal() as session:
-            new_user = User(
-                telegram_id=message.from_user.id,
-                username=message.from_user.username,
-                bot_language=selected_lang
-            )
-            session.add(new_user)
+            # Tekshiramiz: foydalanuvchi allaqachon bormi?
+            result = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
+            user = result.scalar_one_or_none()
+            
+            if user:
+                # Agar bo'lsa, tilini yangilaymiz
+                user.bot_language = selected_lang
+                user.username = message.from_user.username
+            else:
+                # Agar bo'lmasa, yangi qo'shamiz
+                new_user = User(
+                    telegram_id=message.from_user.id,
+                    username=message.from_user.username,
+                    bot_language=selected_lang
+                )
+                session.add(new_user)
+            
             await session.commit()
         
         await state.clear()
