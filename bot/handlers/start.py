@@ -87,6 +87,26 @@ async def process_language(message: types.Message, state: FSMContext):
             
             await session.commit()
         
+        # Adminga notifikatsiya yuboramiz
+        SUPER_ADMIN_ID = int(os.getenv("ADMIN_ID", "1400240097"))
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+        builder = InlineKeyboardBuilder()
+        builder.row(types.InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"sys_approve_{message.from_user.id}"),
+                    types.InlineKeyboardButton(text="❌ Rad etish", callback_data=f"sys_reject_{message.from_user.id}"))
+        
+        admin_text = (
+            f"👤 <b>Yangi foydalanuvchi!</b>\n\n"
+            f"🆔 ID: <code>{message.from_user.id}</code>\n"
+            f"👤 Ism: {message.from_user.full_name}\n"
+            f"🔗 Username: @{message.from_user.username or 'yoq'}\n"
+            f"🌐 Til: {selected_lang.upper()}\n\n"
+            f"Ushbu foydalanuvchiga botdan foydalanishga ruxsat berasizmi?"
+        )
+        try:
+            from main import bot as aiobot
+            await aiobot.send_message(SUPER_ADMIN_ID, admin_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except: pass
+
         await state.clear()
         await message.answer(
             get_text('welcome_msg', selected_lang),
