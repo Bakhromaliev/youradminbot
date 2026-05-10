@@ -57,7 +57,13 @@ async def main():
     # Monitor-ni handler-larga uzatish
     dp["tg_monitor"] = tg_monitor
     
-    tw_monitor = TwitterMonitor(translator=translator, bot=bot, interval=300)
+    tw_monitor = TwitterMonitor(
+        api_key=os.getenv("TWITTER_API_KEY"),
+        api_host=os.getenv("TWITTER_API_HOST", "twitter-api45.p.rapidapi.com"),
+        bot_token=os.getenv("BOT_TOKEN"),
+        translator=translator,
+        aiogram_bot=bot
+    )
     dp["tw_monitor"] = tw_monitor
     
     # Handlerlarni ro'yxatdan o'tkazish

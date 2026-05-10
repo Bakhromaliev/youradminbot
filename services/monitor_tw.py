@@ -22,6 +22,16 @@ class TwitterMonitor:
         self.download_path = "downloads"
         if not os.path.exists(self.download_path): os.makedirs(self.download_path)
 
+    async def start(self):
+        """Monitorning asosiy sikli"""
+        logger.info("Twitter Monitor starting...")
+        while True:
+            try:
+                await self.check_all_twitter_unique_sources()
+            except Exception as e:
+                logger.error(f"Twitter loop error: {e}")
+            await asyncio.sleep(300) # Har 5 daqiqada tekshiradi
+
     async def check_all_twitter_unique_sources(self):
         async with AsyncSessionLocal() as session:
             result = await session.execute(select(Source).where(Source.source_type == "twitter"))
