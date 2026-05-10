@@ -12,6 +12,7 @@ from bot_database.models import PendingPost, SourceChannelLink, OutputChannel, U
 from bot.utils.texts import get_text
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import FSInputFile
+from aiogram.utils.markdown import html_decoration as hd
 from services.translator import TranslatorService
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,31 @@ def get_preview_keyboard(post_id: int):
     builder.row(types.InlineKeyboardButton(text="📝 Tahrirlash", callback_data=f"edit_post_{post_id}"))
     return builder.as_markup()
 
+def apply_final_formatting(text: str, alphabet: str) -> str:
+    # 1. Kalit so'zlarni himoya qilish
+    keywords = ["JUST IN", "BREAKING", "CONFIRMED"]
+    protected_text = text
+    for i, kw in enumerate(keywords):
+        protected_text = _re.sub(kw, f"____KW_{i}____", protected_text, flags=_re.IGNORECASE)
+
+    # 2. Alifboni o'girish
+    if alphabet == 'cyrillic':
+        final_text = translator_service.to_cyrillic(protected_text)
+    else:
+        final_text = translator_service.to_latin(protected_text)
+    
+    # 3. HTML xavfsiz qilish (Escape)
+    safe_text = hd.quote(final_text)
+
+    # 4. Kalit so'zlarni qaytarish va QALIN qilish
+    for i, kw in enumerate(keywords):
+        safe_text = safe_text.replace(f"____KW_{i}____", f"<b>{kw}</b>")
+
+    # 5. Premium emojilarni joylashtirish
+    safe_text = _re.sub(r'\[\[emoji_id:(\d+):(.+?)\]\]', r'<tg-emoji emoji-id="\1">\2</tg-emoji>', safe_text)
+    
+    return safe_text
+
 @router.callback_query(F.data.startswith("approve_post_"))
 async def approve_post(callback: types.CallbackQuery, bot: Bot):
     post_id = int(callback.data.split("_")[-1])
@@ -36,59 +62,37 @@ async def approve_post(callback: types.CallbackQuery, bot: Bot):
         try:
             result = await session.execute(select(PendingPost).where(PendingPost.id == post_id).options(selectinload(PendingPost.media)))
             post = result.scalar_one_or_none()
-            if not post or post.status != "pending": 
-                return await callback.answer("⚠️ Bu xabar allaqachon qayta ishlangan.")
+            if not post or post.status != "pending": return await callback.answer("⚠️ Qayta ishlangan.")
 
-            # Bog'langan kanallarni topish
             stmt = select(SourceChannelLink).where(SourceChannelLink.source_id == post.source_id, SourceChannelLink.user_id == post.user_id)
             links = (await session.execute(stmt)).scalars().all()
-            
-            if not links:
-                return await callback.answer("❌ Bu manbaga ulangan kanallar topilmadi. Iltimos, sozlamalarni tekshiring.", show_alert=True)
+            if not links: return await callback.answer("❌ Kanallar topilmadi.", show_alert=True)
 
             count = 0
             for link in links:
-                # Kanallarni ID orqali aniq qidirish
                 ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
                 channel = ch_res.scalar_one_or_none()
                 if not channel: continue
                 
-                # Matnni HTML xavfsiz qilish
-                from aiogram.utils.markdown import html_decoration as hd
+                # Formatlashni qo'llash
+                final_text = apply_final_formatting(post.translated_text, channel.alphabet)
                 
-                base_text = post.translated_text
-                # Alifboni o'girish
-                if channel.alphabet == 'cyrillic':
-                    base_text = translator_service.to_cyrillic(base_text)
-                else:
-                    base_text = translator_service.to_latin(base_text)
-                
-                # Avval xavfli belgilarni ( < > & ) tozalaymiz
-                safe_text = hd.quote(base_text)
-                
-                # Keyin emojilarni joyiga qo'yamiz
-                final_text = decode_premium_emojis(safe_text)
-                
-                # Imzoni qo'shish (Imzo ham xavfsiz bo'lishi kerak)
+                # Imzoni qo'shish
                 if channel.signature:
-                    sig = hd.quote(decode_premium_emojis(channel.signature))
+                    sig = hd.quote(channel.signature)
                     if channel.is_bold_signature: sig = f"<b>{sig}</b>"
                     final_text += ("\n" * (channel.signature_spacing + 1)) + sig
 
                 try:
-                    # Yuborishda chat_id ni to'g'rilash (Username bo'lsa @ bilan, ID bo'lsa son ko'rinishida)
-                    target_chat = channel.channel_id
-                    if not target_chat.startswith('@') and (target_chat.startswith('-100') or target_chat.lstrip('-').isdigit()):
-                        target_chat = int(target_chat)
-
+                    target_chat = int(channel.channel_id) if (channel.channel_id.startswith('-100') or channel.channel_id.lstrip('-').isdigit()) else channel.channel_id
                     if post.media_url:
                         await bot.send_photo(chat_id=target_chat, photo=post.media_url, caption=final_text, parse_mode="HTML")
                     elif not post.media:
                         await bot.send_message(chat_id=target_chat, text=final_text, parse_mode="HTML")
                     elif len(post.media) == 1:
-                        m = post.media[0]; file_path = m.file_id
-                        if m.media_type == 'photo': await bot.send_photo(chat_id=target_chat, photo=file_path, caption=final_text, parse_mode="HTML")
-                        else: await bot.send_video(chat_id=target_chat, video=file_path, caption=final_text, parse_mode="HTML")
+                        m = post.media[0]
+                        if m.media_type == 'photo': await bot.send_photo(chat_id=target_chat, photo=m.file_id, caption=final_text, parse_mode="HTML")
+                        else: await bot.send_video(chat_id=target_chat, video=m.file_id, caption=final_text, parse_mode="HTML")
                     else:
                         media_group = []
                         for i, m in enumerate(post.media):
@@ -106,15 +110,10 @@ async def approve_post(callback: types.CallbackQuery, bot: Bot):
                 except: pass
                 await callback.answer(f"✅ {count} ta kanalga yuborildi!")
             else:
-                await callback.answer("❌ Xabarni kanallarga yuborib bo'lmadi. Bot kanalda adminligini tekshiring.", show_alert=True)
-
+                await callback.answer("❌ Yuborib bo'lmadi.", show_alert=True)
         except Exception as outer_e:
             logger.error(f"Approval critical error: {outer_e}", exc_info=True)
-            await callback.answer("❌ Tasdiqlashda tizim xatosi yuz berdi.", show_alert=True)
-
-def decode_premium_emojis(text: str) -> str:
-    if not text: return ""
-    return _re.sub(r'\[\[emoji_id:(\d+):(.+?)\]\]', r'<tg-emoji emoji-id="\1">\2</tg-emoji>', text)
+            await callback.answer("❌ Tizim xatosi.", show_alert=True)
 
 @router.callback_query(F.data.startswith("reject_post_"))
 async def reject_post(callback: types.CallbackQuery):
@@ -138,7 +137,7 @@ async def edit_post_start(callback: types.CallbackQuery, state: FSMContext):
     post_id = int(callback.data.split("_")[-1])
     await state.update_data(editing_post_id=post_id)
     await state.set_state(EditPostStates.waiting_for_new_text)
-    instruction = await callback.message.answer("⌨️ Yangi matnni yuboring (imzosiz va original alifboda):")
+    instruction = await callback.message.answer("⌨️ Yangi matnni yuboring:")
     await state.update_data(instruction_msg_id=instruction.message_id)
     await callback.answer()
 
@@ -175,9 +174,9 @@ async def edit_post_finish(message: types.Message, state: FSMContext, bot: Bot):
         elif not post.media:
             await message.answer(preview_body, reply_markup=get_preview_keyboard(post.id), parse_mode="HTML")
         elif len(post.media) == 1:
-            m = post.media[0]; file_id = m.file_id
-            if m.media_type == 'photo': await message.answer_photo(file_id, caption=preview_body, reply_markup=get_preview_keyboard(post.id), parse_mode="HTML")
-            else: await message.answer_video(file_id, caption=preview_body, reply_markup=get_preview_keyboard(post.id), parse_mode="HTML")
+            m = post.media[0]
+            if m.media_type == 'photo': await message.answer_photo(m.file_id, caption=preview_body, reply_markup=get_preview_keyboard(post.id), parse_mode="HTML")
+            else: await message.answer_video(m.file_id, caption=preview_body, reply_markup=get_preview_keyboard(post.id), parse_mode="HTML")
         else:
             media_group = []
             for i, m in enumerate(post.media):

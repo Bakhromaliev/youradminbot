@@ -34,21 +34,18 @@ class TranslatorService:
         for i, emoji_code in enumerate(found_emojis):
             protected_text = protected_text.replace(emoji_code, f'____{i}____', 1)
 
-        # QAT'IY JURNALISTIK YO'RIQNOMA
         system_instruction = (
             "SIZ PROFESSIONAL SPORT JURNALISTISIZ. VAZIFANGIZ — INGLIZCHA YOKI RUSCHA SPORT XABARLARINI "
             "O'ZBEK TILIGA PROFESSIONAL SPORT NASHRLARI USLUBIDA QAYTA YOZIB BERISH.\n\n"
-            "ASOSIY TALABLAR:\n"
+            "QOIDALAR:\n"
             "1. GAP TUZILISHI: O'zbek tilida gap har doim FE'L BILAN TUGASHINI ta'minlang.\n"
             "2. ISMLAR (RUSCHA USLUB): Ismlarni rus sport nashrlari (Sports.ru) uslubida yozing. Masalan: Huijsen -> Xyuysen.\n"
-            "3. TAHRIR: Matnni robotga o'xshab qolmasin, o'zbek tilida tabiiy yangrasin.\n"
-            "4. FORMATLASH: Hech qanday HTML teglari (<b> kabi) yoki Markdown belgilari (** kabi) ISHLATMANG. Faqat oddiy matn bering."
+            "3. FORMATLASH: Hech qanday HTML teglari (<b>), Markdown (**), yoki yulduzchalar ISHLATMANG. Faqat oddiy matn bering."
         )
 
         prompt = f"Quyidagi futbol xabarini o'zbek tilida professional jurnalistik tilda qayta yozing:\n\nMATN:\n{protected_text}"
 
         translated_result = None
-
         if self.openai_key:
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
@@ -73,39 +70,24 @@ class TranslatorService:
             except Exception: pass
 
         if not translated_result:
-            return self.restore_emojis(protected_text, found_emojis, target_alphabet)
+            return self.restore_placeholders(protected_text, found_emojis, target_alphabet)
 
-        # Ortiqcha yulduzchalarni va HTML belgilarini tozalash
+        # Ortiqcha belgilarni tozalash (faqat toza matn qolsin)
         translated_result = translated_result.replace("**", "").replace("*", "").replace("<", "").replace(">", "")
 
-        if is_twitter:
-            for kw in ["JUST IN", "CONFIRMED", "BREAKING"]:
-                # Kalit so'zlarni qalin qilish (buni biz qo'lda qilamiz)
-                translated_result = translated_result.replace(f"{kw}:", f"<b>{kw}:</b>")
-                translated_result = translated_result.replace(kw, f"<b>{kw}:</b>")
+        return self.restore_placeholders(translated_result, found_emojis, target_alphabet)
 
-        return self.restore_emojis(translated_result, found_emojis, target_alphabet)
-
-    def restore_emojis(self, text: str, original_emojis: list, target_alphabet: str) -> str:
-        # Kalit so'zlarni alifbo o'girishdan himoya qilish
-        keywords = ["JUST IN", "BREAKING", "CONFIRMED"]
-        for i, kw in enumerate(keywords):
-            text = text.replace(kw, f"____KW_{i}____")
-
+    def restore_placeholders(self, text: str, original_emojis: list, target_alphabet: str) -> str:
+        # Alifbo o'girish (Toza matn holatida)
         if target_alphabet == 'cyrillic':
             text = self.to_cyrillic(text)
         elif target_alphabet == 'latin':
             text = self.to_latin(text)
         
-        # Kalit so'zlarni qaytarish
-        for i, kw in enumerate(keywords):
-            text = text.replace(f"____KW_{i}____", kw)
-
+        # Emojilarni qaytarish
         for i, emoji_code in enumerate(original_emojis):
             text = text.replace(f'____{i}____', emoji_code)
         
-        # Dublikat teglarni tozalash
-        text = text.replace("<b><b>", "<b>").replace("</b></b>", "</b>")
         return text
 
     def to_latin(self, text: str) -> str:
