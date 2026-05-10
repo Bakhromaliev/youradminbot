@@ -1,6 +1,7 @@
 import logging
 import html
 import os
+import httpx
 import re as _re
 from aiogram import Router, types, F, Bot
 from aiogram.fsm.context import FSMContext
@@ -14,6 +15,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import FSInputFile
 from aiogram.utils.markdown import html_decoration as hd
 from services.translator import TranslatorService
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -47,6 +49,19 @@ def apply_final_formatting(text: str, alphabet: str) -> str:
     safe_text = _re.sub(r'\[\[emoji_id:(\d+):(.+?)\]\]', r'<tg-emoji emoji-id="\1">\2</tg-emoji>', safe_text)
     return safe_text
 
+async def download_temp_media(url: str):
+    """Eski postlar uchun rasmni tezkor yuklab olish"""
+    if not url or not (url.startswith('http://') or url.startswith('https://')): return None
+    try:
+        path = f"downloads/temp_{int(datetime.now().timestamp())}_{os.urandom(4).hex()}.jpg"
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, timeout=15)
+            if resp.status_code == 200:
+                with open(path, "wb") as f: f.write(resp.content)
+                return path
+    except: pass
+    return None
+
 @router.callback_query(F.data.startswith("approve_post_"))
 async def approve_post(callback: types.CallbackQuery, bot: Bot):
     post_id = int(callback.data.split("_")[-1])
@@ -56,7 +71,7 @@ async def approve_post(callback: types.CallbackQuery, bot: Bot):
             post = result.scalar_one_or_none()
             if not post or post.status != "pending": return await callback.answer("⚠️ Qayta ishlangan.")
 
-            stmt = select(SourceChannelLink).where(SourceChannelLink.source_id == post.source_id, SourceChannelLink.user_id == post.user_id)
+            stmt = select(SourceChannelLink).where(SourceChannelLink.user_id == post.user_id, SourceChannelLink.source_id == post.source_id)
             links = (await session.execute(stmt)).scalars().all()
             if not links: return await callback.answer("❌ Kanallar topilmadi.", show_alert=True)
 
@@ -75,11 +90,9 @@ async def approve_post(callback: types.CallbackQuery, bot: Bot):
                 try:
                     target_chat = int(channel.channel_id) if (channel.channel_id.startswith('-100') or channel.channel_id.lstrip('-').isdigit()) else channel.channel_id
                     
-                    # Media yuborish mantig'ini kengaytiramiz (Ham eski, ham yangi postlar uchun)
                     if post.media:
                         if len(post.media) == 1:
-                            m = post.media[0]
-                            file = FSInputFile(m.file_id) if os.path.exists(m.file_id) else m.file_id
+                            m = post.media[0]; file = FSInputFile(m.file_id) if os.path.exists(m.file_id) else m.file_id
                             if m.media_type == 'photo': await bot.send_photo(chat_id=target_chat, photo=file, caption=final_text, parse_mode="HTML")
                             else: await bot.send_video(chat_id=target_chat, video=file, caption=final_text, parse_mode="HTML")
                         else:
@@ -90,16 +103,14 @@ async def approve_post(callback: types.CallbackQuery, bot: Bot):
                                 else: media_group.append(types.InputMediaVideo(media=file, caption=final_text if i == 0 else "", parse_mode="HTML"))
                             await bot.send_media_group(chat_id=target_chat, media=media_group)
                     elif post.media_url:
-                        # Eski postlar (URL orqali) - himoya bilan
-                        try:
-                            await bot.send_photo(chat_id=target_chat, photo=post.media_url, caption=final_text, parse_mode="HTML")
-                        except Exception as e:
-                            if "wrong HTTP URL" in str(e):
-                                await bot.send_message(chat_id=target_chat, text=final_text, parse_mode="HTML")
-                            else: raise e
+                        # Eski postlar uchun on-the-fly yuklab olish
+                        temp_path = await download_temp_media(post.media_url)
+                        if temp_path:
+                            await bot.send_photo(chat_id=target_chat, photo=FSInputFile(temp_path), caption=final_text, parse_mode="HTML")
+                        else:
+                            await bot.send_message(chat_id=target_chat, text=final_text, parse_mode="HTML")
                     else:
                         await bot.send_message(chat_id=target_chat, text=final_text, parse_mode="HTML")
-                    
                     count += 1
                 except Exception as e:
                     error_msg = str(e); logger.error(f"Error sending to {channel.channel_name}: {e}")
@@ -155,7 +166,7 @@ async def edit_post_finish(message: types.Message, state: FSMContext, bot: Bot):
         await session.commit()
         
         post = (await session.execute(select(PendingPost).where(PendingPost.id == post_id).options(selectinload(PendingPost.media)))).scalar_one()
-        links = (await session.execute(select(SourceChannelLink).where(SourceChannelLink.source_id == post.source_id, SourceChannelLink.user_id == post.user_id))).scalars().all()
+        links = (await session.execute(select(SourceChannelLink).where(SourceChannelLink.user_id == post.user_id, SourceChannelLink.source_id == post.source_id))).scalars().all()
         
         channel_names = []
         for link in links:
