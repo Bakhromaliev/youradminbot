@@ -85,8 +85,8 @@ class TwitterMonitor:
                         if tweet.get('retweeted') or 'retweeted_status' in tweet: continue
                         t_id = str(tweet.get('tweet_id') or tweet.get('id_str') or tweet.get('id'))
                         if not t_id: continue
-                        existing = await session.execute(select(PendingPost).where(PendingPost.source_type == "twitter", PendingPost.original_text.contains(t_id)))
-                        if existing.scalar_one_or_none(): continue
+                        existing_res = await session.execute(select(PendingPost).where(PendingPost.source_type == "twitter", PendingPost.original_text.contains(t_id)))
+                        if existing_res.first(): continue
                         raw_text = tweet.get('text') or tweet.get('full_text') or ""
                         if not raw_text: continue
                         media_url = self.find_media_recursive(tweet)
@@ -109,8 +109,9 @@ class TwitterMonitor:
 
             channel_names = []
             for link in links:
-                ch = (await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))).scalar_one()
-                channel_names.append(f"📢 {ch.channel_name}")
+                ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
+                ch = ch_res.scalars().first()
+                if ch: channel_names.append(f"📢 {ch.channel_name}")
             
             channels_str = "\n".join(channel_names)
             header = f"🆕 <b>SHERIK: Yangi post (Twitter)!</b>\n\n📍 <b>Yuboriladigan kanallar:</b>\n{channels_str}\n\n"

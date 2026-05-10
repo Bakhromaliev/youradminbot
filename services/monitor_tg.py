@@ -131,8 +131,9 @@ class TelegramMonitor:
                 user_sources[key].append(link)
 
             for (u_id, s_id), user_links in user_sources.items():
-                user = (await session.execute(select(User).where(User.id == u_id))).scalar_one()
-                if not await self.check_user_access(session, user): continue
+                user_res = await session.execute(select(User).where(User.id == u_id))
+                user = user_res.scalars().first()
+                if not user or not await self.check_user_access(session, user): continue
 
                 clean_text = re.sub(r'https?://\S+|t\.me/\S+|tg://\S+|www\.\S+|@\w+', '', text).strip()
                 translated = await self.translator.translate(clean_text, target_lang='uz', target_alphabet='latin')
@@ -176,8 +177,9 @@ class TelegramMonitor:
                 user_sources[key].append(link)
 
             for (u_id, s_id), user_links in user_sources.items():
-                user = (await session.execute(select(User).where(User.id == u_id))).scalar_one()
-                if not await self.check_user_access(session, user): continue
+                user_res = await session.execute(select(User).where(User.id == u_id))
+                user = user_res.scalars().first()
+                if not user or not await self.check_user_access(session, user): continue
 
                 clean_text = re.sub(r'https?://\S+|t\.me/\S+|tg://\S+|www\.\S+|@\w+', '', text).strip()
                 translated = await self.translator.translate(clean_text, target_lang='uz', target_alphabet='latin')
@@ -202,8 +204,9 @@ class TelegramMonitor:
         async with AsyncSessionLocal() as session:
             channel_names = []
             for link in links:
-                ch = (await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))).scalar_one()
-                channel_names.append(f"📢 {ch.channel_name}")
+                ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
+                ch = ch_res.scalars().first()
+                if ch: channel_names.append(f"📢 {ch.channel_name}")
         
         channels_str = "\n".join(channel_names)
         caption = (
