@@ -37,93 +37,74 @@ class TranslatorService:
         # QAT'IY JURNALISTIK YO'RIQNOMA
         system_instruction = (
             "SIZ PROFESSIONAL SPORT JURNALISTISIZ. VAZIFANGIZ — INGLIZCHA YOKI RUSCHA SPORT XABARLARINI "
-            "O'ZBEK TILIGA SO'ZMA-SO'Z EMAS, BALKI PROFESSIONAL SPORT NASHRLARI (CHAMPIONAT.ASIA, TRIBUNA.UZ) "
-            "USLUBIDA QAYTA YOZIB BERISH.\n\n"
+            "O'ZBEK TILIGA PROFESSIONAL SPORT NASHRLARI USLUBIDA QAYTA YOZIB BERISH.\n\n"
             "ASOSIY TALABLAR:\n"
-            "1. GAP TUZILISHI: Inglizcha/ruscha gap tuzilishini butunlay buzing. O'zbek tilida gap har doim FE'L BILAN TUGASHINI ta'minlang.\n"
-            "2. ISMLAR (RUSCHA USLUB): Barcha Yevropa va xorijiy ismlarni rus sport nashrlari (Sports.ru, Championat.com) qanday yozsa, "
-            "o'zbek tiliga shunday transkripsiya qiling. Masalan: Huijsen -> Xyuysen, Courtois -> Kurtua, Mbappe -> Mbappe.\n"
-            "3. SPORT TERMINLARI: 'Warm-up' so'zini 'Isinish' emas, 'O'yinoldi chigalyozdi mashg'ulotlari' deb tarjima qiling. "
-            "'Felt weak/sick' so'zini 'O'zini noqulay his qildi' yoki 'Sog'lig'ida muammo sezdi' deb bering.\n"
-            "4. MA'NO VA MANTIQ: Xabarni o'qib chiqib, uni jurnalistik tilda hikoya qilib bering. Robotga o'xshab qolmasin.\n"
-            "5. ALIFBO: Faqat LOTIN alifbosida, hech qanday HTML teglarsiz (faqat xabarning o'zini) javob bering."
+            "1. GAP TUZILISHI: O'zbek tilida gap har doim FE'L BILAN TUGASHINI ta'minlang.\n"
+            "2. ISMLAR (RUSCHA USLUB): Ismlarni rus sport nashrlari (Sports.ru) uslubida yozing. Masalan: Huijsen -> Xyuysen.\n"
+            "3. TAHRIR: Matnni robotga o'xshab qolmasin, o'zbek tilida tabiiy yangrasin.\n"
+            "4. FORMATLASH: Hech qanday HTML teglari (<b> kabi) yoki Markdown belgilari (** kabi) ISHLATMANG. Faqat oddiy matn bering."
         )
 
-        if is_twitter:
-            system_instruction += (
-                "\n6. TWITTER USLUBI: Xabar qisqa va tezkor bo'lsin. 'JUST IN', 'BREAKING' kabi so'zlarni tarjima qilmasdan qalin (bold) qoldiring."
-            )
-
-        prompt = (
-            f"Quyidagi futbol xabarini o'zbek tilida, professional sport tahriri bilan qayta yozing:\n\n"
-            f"MATN:\n{protected_text}"
-        )
+        prompt = f"Quyidagi futbol xabarini o'zbek tilida professional jurnalistik tilda qayta yozing:\n\nMATN:\n{protected_text}"
 
         translated_result = None
 
-        # 1. OpenAI GPT-4o (Eng kuchli model)
         if self.openai_key:
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     response = await client.post(
                         "https://api.openai.com/v1/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {self.openai_key}",
-                            "Content-Type": "application/json"
-                        },
+                        headers={"Authorization": f"Bearer {self.openai_key}", "Content-Type": "application/json"},
                         json={
                             "model": "gpt-4o",
-                            "messages": [
-                                {"role": "system", "content": system_instruction},
-                                {"role": "user", "content": prompt}
-                            ],
-                            "temperature": 0.2 # Aniqroq tarjima uchun
+                            "messages": [{"role": "system", "content": system_instruction}, {"role": "user", "content": prompt}],
+                            "temperature": 0.2
                         }
                     )
                     if response.status_code == 200:
                         translated_result = response.json()['choices'][0]['message']['content'].strip()
             except Exception: pass
 
-        # 2. Gemini Fallback
         if not translated_result and self.model_names:
             try:
                 model = genai.GenerativeModel(self.model_names[0], system_instruction=system_instruction)
                 resp = model.generate_content(prompt)
-                if resp and resp.text:
-                    translated_result = resp.text.strip()
+                if resp and resp.text: translated_result = resp.text.strip()
             except Exception: pass
 
         if not translated_result:
             return self.restore_emojis(protected_text, found_emojis, target_alphabet)
 
-        translated_result = translated_result.replace('<', '&lt;').replace('>', '&gt;')
+        # Ortiqcha yulduzchalarni va HTML belgilarini tozalash
+        translated_result = translated_result.replace("**", "").replace("*", "").replace("<", "").replace(">", "")
 
         if is_twitter:
             for kw in ["JUST IN", "CONFIRMED", "BREAKING"]:
+                # Kalit so'zlarni qalin qilish (buni biz qo'lda qilamiz)
                 translated_result = translated_result.replace(f"{kw}:", f"<b>{kw}:</b>")
                 translated_result = translated_result.replace(kw, f"<b>{kw}:</b>")
-            translated_result = translated_result.replace("<b>JUST IN:</b>", "🚨 <b>JUST IN:</b>")
-            translated_result = translated_result.replace("<b>CONFIRMED:</b>", "✅ <b>CONFIRMED:</b>")
-            translated_result = translated_result.replace("<b>BREAKING:</b>", "📰 <b>BREAKING:</b>")
 
         return self.restore_emojis(translated_result, found_emojis, target_alphabet)
 
     def restore_emojis(self, text: str, original_emojis: list, target_alphabet: str) -> str:
-        protected_sources = re.findall(r'\[\[\[(.*?)\]\]\]', text)
-        for i, source in enumerate(protected_sources):
-            text = text.replace(f'[[[{source}]]]', f'____SRC_{i}____')
+        # Kalit so'zlarni alifbo o'girishdan himoya qilish
+        keywords = ["JUST IN", "BREAKING", "CONFIRMED"]
+        for i, kw in enumerate(keywords):
+            text = text.replace(kw, f"____KW_{i}____")
 
         if target_alphabet == 'cyrillic':
             text = self.to_cyrillic(text)
         elif target_alphabet == 'latin':
             text = self.to_latin(text)
         
-        for i, source in enumerate(protected_sources):
-            text = text.replace(f'____SRC_{i}____', f"<b>{source}</b>")
+        # Kalit so'zlarni qaytarish
+        for i, kw in enumerate(keywords):
+            text = text.replace(f"____KW_{i}____", kw)
 
         for i, emoji_code in enumerate(original_emojis):
             text = text.replace(f'____{i}____', emoji_code)
         
+        # Dublikat teglarni tozalash
         text = text.replace("<b><b>", "<b>").replace("</b></b>", "</b>")
         return text
 
@@ -152,10 +133,10 @@ class TranslatorService:
             ('SH', 'Ш'), ('Sh', 'Ш'), ('sh', 'ш'),
             ('CH', 'Ч'), ('Ch', 'Ч'), ('ch', 'ч'),
             ('YO', 'Ё'), ('Yo', 'Ё'), ('yo', 'ё'),
-            ('YU', 'Ю'), ('Yu', 'YU'), ('yu', 'yu'),
-            ('YA', 'Я'), ('Ya', 'Ya'), ('ya', 'ya'),
-            ('YE', 'Е'), ('Ye', 'Ye'), ('ye', 'ye'),
-            ('TS', 'Ц'), ('Ts', 'Ts'), ('ts', 'ts')
+            ('YU', 'Ю'), ('Yu', 'Ю'), ('yu', 'ю'),
+            ('YA', 'Я'), ('Ya', 'Я'), ('ya', 'я'),
+            ('YE', 'Е'), ('Ye', 'Е'), ('ye', 'е'),
+            ('TS', 'Ц'), ('Ts', 'Ц'), ('ts', 'ц')
         ]
         for s, d in complex_repl: text = text.replace(s, d)
         single_repl = {
