@@ -53,18 +53,25 @@ async def approve_post(callback: types.CallbackQuery, bot: Bot):
                 channel = ch_res.scalar_one_or_none()
                 if not channel: continue
                 
+                # Matnni HTML xavfsiz qilish
+                from aiogram.utils.markdown import html_decoration as hd
+                
                 base_text = post.translated_text
                 # Alifboni o'girish
                 if channel.alphabet == 'cyrillic':
-                    final_text = translator_service.to_cyrillic(base_text)
+                    base_text = translator_service.to_cyrillic(base_text)
                 else:
-                    final_text = translator_service.to_latin(base_text)
+                    base_text = translator_service.to_latin(base_text)
                 
-                final_text = decode_premium_emojis(final_text)
+                # Avval xavfli belgilarni ( < > & ) tozalaymiz
+                safe_text = hd.quote(base_text)
                 
-                # Imzoni qo'shish
+                # Keyin emojilarni joyiga qo'yamiz
+                final_text = decode_premium_emojis(safe_text)
+                
+                # Imzoni qo'shish (Imzo ham xavfsiz bo'lishi kerak)
                 if channel.signature:
-                    sig = decode_premium_emojis(channel.signature)
+                    sig = hd.quote(decode_premium_emojis(channel.signature))
                     if channel.is_bold_signature: sig = f"<b>{sig}</b>"
                     final_text += ("\n" * (channel.signature_spacing + 1)) + sig
 
