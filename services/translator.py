@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 class TranslatorService:
     def __init__(self, gemini_key: str = None, openai_key: str = None):
-        # Gemini init
         api_key = gemini_key or os.getenv("GEMINI_API_KEY")
         if api_key: api_key = api_key.strip()
         self.model_names = []
@@ -22,59 +21,47 @@ class TranslatorService:
                 self.model_names = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
             except Exception: pass
         
-        # OpenAI init
         raw_key = openai_key or os.getenv("OPENAI_API_KEY")
         self.openai_key = raw_key.strip() if raw_key and raw_key != "dummy" else None
 
     async def translate(self, text: str, target_lang: str = 'uz', target_alphabet: str = 'latin', is_twitter: bool = False) -> str:
-        # Arab/Fors yoki Lotin/Kirill harflari borligini tekshirish
         if not re.search(r'[a-zA-Zа-яА-ЯёЁўЎғҒқҚҳҲ\u0600-\u06FF]', text):
             return text
 
-        # Emojilarni HIMOYALASH
         emoji_pattern = r'\[\[emoji_id:[^\]]+\]\]'
         found_emojis = re.findall(emoji_pattern, text)
         protected_text = text
         for i, emoji_code in enumerate(found_emojis):
             protected_text = protected_text.replace(emoji_code, f'____{i}____', 1)
 
-        # JURNALISTIK VA BLOGERLIK YO'RIQNOMASI
-        naming_logic = (
-            "SIZNING VAZIFANGIZ - SHUNCHAKI TARJIMA QILISH EMAS, BALKI XABARNI O'ZBEK SPORT BLOGERLARI KABI JONLI VA QIZIQARLI QILIB QAYTA YOZISH.\n"
-            "QOIDALAR:\n"
-            "1. SO'ZMA-SO'Z TARJIMA QILMANG! Gapning umumiy mazmunini o'qing va uni o'zbek tilida tabiiy, ravon va mantiqli jumlalar bilan ifodalang.\n"
-            "2. GRAMMATIKA: O'zbek tili qoidalariga ko'ra gapning oxirida fe'l (harakat) bo'lishini ta'minlang. Ega-to'ldiruvchi-kesim tartibiga amal qiling.\n"
-            "3. SPORT USLUBI: Sport nashrlari (Championat.asia, Tribuna.uz kabi) uslubida yozing. Matn robot emas, odam yozganidek tuyulsin.\n"
-            "4. ISMLAR: Yevropa futbolchilarini ruscha standartda yozing (Carvajal -> Karvaxal, Courtois -> Kurtua). Arab/Fors ismlarini o'zbekcha (Al-Ittihod, Al-Hilol) yozing.\n"
-            "5. 'Cristiano Ronaldo' -> 'Krishtianu Ronaldu', 'Messi' -> 'Lionel Messi'.\n"
-            "6. Manbalar va nashrlar nomi har doim LOTIN alifbosida, o'zgartirilmasdan qolsin."
+        # QAT'IY JURNALISTIK YO'RIQNOMA
+        system_instruction = (
+            "SIZ PROFESSIONAL SPORT JURNALISTISIZ. VAZIFANGIZ — INGLIZCHA YOKI RUSCHA SPORT XABARLARINI "
+            "O'ZBEK TILIGA SO'ZMA-SO'Z EMAS, BALKI PROFESSIONAL SPORT NASHRLARI (CHAMPIONAT.ASIA, TRIBUNA.UZ) "
+            "USLUBIDA QAYTA YOZIB BERISH.\n\n"
+            "ASOSIY TALABLAR:\n"
+            "1. GAP TUZILISHI: Inglizcha/ruscha gap tuzilishini butunlay buzing. O'zbek tilida gap har doim FE'L BILAN TUGASHINI ta'minlang.\n"
+            "2. ISMLAR (RUSCHA USLUB): Barcha Yevropa va xorijiy ismlarni rus sport nashrlari (Sports.ru, Championat.com) qanday yozsa, "
+            "o'zbek tiliga shunday transkripsiya qiling. Masalan: Huijsen -> Xyuysen, Courtois -> Kurtua, Mbappe -> Mbappe.\n"
+            "3. SPORT TERMINLARI: 'Warm-up' so'zini 'Isinish' emas, 'O'yinoldi chigalyozdi mashg'ulotlari' deb tarjima qiling. "
+            "'Felt weak/sick' so'zini 'O'zini noqulay his qildi' yoki 'Sog'lig'ida muammo sezdi' deb bering.\n"
+            "4. MA'NO VA MANTIQ: Xabarni o'qib chiqib, uni jurnalistik tilda hikoya qilib bering. Robotga o'xshab qolmasin.\n"
+            "5. ALIFBO: Faqat LOTIN alifbosida, hech qanday HTML teglarsiz (faqat xabarning o'zini) javob bering."
         )
 
         if is_twitter:
-            system_instruction = (
-                f"Siz eng mashhur o'zbek sport blogerisiz. Twitter'dagi qisqa va tezkor xabarni tahlil qiling.\n"
-                f"{naming_logic}\n"
-                "1. 'JUST IN', 'CONFIRMED', 'BREAKING' so'zlarini tarjima qilmasdan, qalin (bold) holatda qoldiring.\n"
-                "2. Xabarni o'ta hayajonli va 'insayderlik' ruhida taqdim eting.\n"
-                "3. Manbani SOURCE: [[[Ism]]] ko'rinishida oxirida ko'rsating. Faqat LOTINDA, HTML-siz matn bering."
-            )
-        else:
-            system_instruction = (
-                f"Siz professional sport jurnalistisiz. Telegram kanal uchun tahliliy va mazmunli post tayyorlang.\n"
-                f"{naming_logic}\n"
-                "1. Matnni o'qib chiqib, uni o'zbek o'quvchisi uchun qiziqarli qilib hikoya qilib bering.\n"
-                "2. Ma'no yo'qolmasin, lekin gap tuzilishi inglizcha/ruscha emas, sof o'zbekcha bo'lsin.\n"
-                "3. Faqat LOTIN alifbosida, hech qanday HTML teglarsiz javob bering."
+            system_instruction += (
+                "\n6. TWITTER USLUBI: Xabar qisqa va tezkor bo'lsin. 'JUST IN', 'BREAKING' kabi so'zlarni tarjima qilmasdan qalin (bold) qoldiring."
             )
 
         prompt = (
-            f"Quyidagi futbol xabarini o'zbek tiliga lotin alifbosida tarjima qiling:\n\n"
+            f"Quyidagi futbol xabarini o'zbek tilida, professional sport tahriri bilan qayta yozing:\n\n"
             f"MATN:\n{protected_text}"
         )
 
         translated_result = None
 
-        # 1. OpenAI
+        # 1. OpenAI GPT-4o (Eng kuchli model)
         if self.openai_key:
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
@@ -85,12 +72,12 @@ class TranslatorService:
                             "Content-Type": "application/json"
                         },
                         json={
-                            "model": "gpt-4o-mini",
+                            "model": "gpt-4o",
                             "messages": [
                                 {"role": "system", "content": system_instruction},
                                 {"role": "user", "content": prompt}
                             ],
-                            "temperature": 0.4
+                            "temperature": 0.2 # Aniqroq tarjima uchun
                         }
                     )
                     if response.status_code == 200:
@@ -118,7 +105,6 @@ class TranslatorService:
             translated_result = translated_result.replace("<b>JUST IN:</b>", "🚨 <b>JUST IN:</b>")
             translated_result = translated_result.replace("<b>CONFIRMED:</b>", "✅ <b>CONFIRMED:</b>")
             translated_result = translated_result.replace("<b>BREAKING:</b>", "📰 <b>BREAKING:</b>")
-            translated_result = translated_result.replace("SOURCE:", "\n\n📰")
 
         return self.restore_emojis(translated_result, found_emojis, target_alphabet)
 
@@ -153,8 +139,7 @@ class TranslatorService:
             'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya', 'Ў': "O'", 'Ғ': "G'", 'Қ': 'Q', 'Ҳ': 'H'
         }
         res = text
-        for k, v in repl_map.items():
-            res = res.replace(k, v)
+        for k, v in repl_map.items(): res = res.replace(k, v)
         return res
 
     def to_cyrillic(self, text: str) -> str:
@@ -167,10 +152,10 @@ class TranslatorService:
             ('SH', 'Ш'), ('Sh', 'Ш'), ('sh', 'ш'),
             ('CH', 'Ч'), ('Ch', 'Ч'), ('ch', 'ч'),
             ('YO', 'Ё'), ('Yo', 'Ё'), ('yo', 'ё'),
-            ('YU', 'Ю'), ('Yu', 'Ю'), ('yu', 'ю'),
-            ('YA', 'Я'), ('Ya', 'Я'), ('ya', 'я'),
-            ('YE', 'Е'), ('Ye', 'Е'), ('ye', 'е'),
-            ('TS', 'Ц'), ('Ts', 'Ц'), ('ts', 'ц')
+            ('YU', 'Ю'), ('Yu', 'YU'), ('yu', 'yu'),
+            ('YA', 'Я'), ('Ya', 'Ya'), ('ya', 'ya'),
+            ('YE', 'Е'), ('Ye', 'Ye'), ('ye', 'ye'),
+            ('TS', 'Ц'), ('Ts', 'Ts'), ('ts', 'ts')
         ]
         for s, d in complex_repl: text = text.replace(s, d)
         single_repl = {
