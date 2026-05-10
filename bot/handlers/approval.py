@@ -85,8 +85,18 @@ async def approve_post(callback: types.CallbackQuery, bot: Bot):
 
                 try:
                     target_chat = int(channel.channel_id) if (channel.channel_id.startswith('-100') or channel.channel_id.lstrip('-').isdigit()) else channel.channel_id
-                    if post.media_url:
-                        await bot.send_photo(chat_id=target_chat, photo=post.media_url, caption=final_text, parse_mode="HTML")
+                    
+                    # URL validmi yoki yo'qmi tekshirish
+                    is_valid_url = post.media_url and (post.media_url.startswith('http://') or post.media_url.startswith('https://'))
+
+                    if is_valid_url:
+                        try:
+                            await bot.send_photo(chat_id=target_chat, photo=post.media_url, caption=final_text, parse_mode="HTML")
+                        except Exception as url_err:
+                            if "wrong HTTP URL" in str(url_err) or "wrong file identifier" in str(url_err):
+                                # Agar URL xato bo'lsa, matnni o'zini yuboramiz
+                                await bot.send_message(chat_id=target_chat, text=final_text, parse_mode="HTML")
+                            else: raise url_err
                     elif not post.media:
                         await bot.send_message(chat_id=target_chat, text=final_text, parse_mode="HTML")
                     elif len(post.media) == 1:
@@ -101,6 +111,7 @@ async def approve_post(callback: types.CallbackQuery, bot: Bot):
                         await bot.send_media_group(chat_id=target_chat, media=media_group)
                     count += 1
                 except Exception as e:
+                    error_msg = str(e)
                     logger.error(f"Error sending to {channel.channel_name}: {e}")
 
             if count > 0:
@@ -110,7 +121,7 @@ async def approve_post(callback: types.CallbackQuery, bot: Bot):
                 except: pass
                 await callback.answer(f"✅ {count} ta kanalga yuborildi!")
             else:
-                await callback.answer("❌ Yuborib bo'lmadi.", show_alert=True)
+                await callback.answer(f"❌ Xatolik: {error_msg}", show_alert=True)
         except Exception as outer_e:
             logger.error(f"Approval critical error: {outer_e}", exc_info=True)
             await callback.answer("❌ Tizim xatosi.", show_alert=True)
