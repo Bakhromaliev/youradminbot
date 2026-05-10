@@ -31,28 +31,20 @@ def get_preview_keyboard(post_id: int):
     return builder.as_markup()
 
 def apply_final_formatting(text: str, alphabet: str) -> str:
-    # 1. Kalit so'zlarni himoya qilish
     keywords = ["JUST IN", "BREAKING", "CONFIRMED"]
     protected_text = text
     for i, kw in enumerate(keywords):
         protected_text = _re.sub(kw, f"____KW_{i}____", protected_text, flags=_re.IGNORECASE)
 
-    # 2. Alifboni o'girish
     if alphabet == 'cyrillic':
         final_text = translator_service.to_cyrillic(protected_text)
     else:
         final_text = translator_service.to_latin(protected_text)
     
-    # 3. HTML xavfsiz qilish (Escape)
     safe_text = hd.quote(final_text)
-
-    # 4. Kalit so'zlarni qaytarish va QALIN qilish
     for i, kw in enumerate(keywords):
         safe_text = safe_text.replace(f"____KW_{i}____", f"<b>{kw}</b>")
-
-    # 5. Premium emojilarni joylashtirish
     safe_text = _re.sub(r'\[\[emoji_id:(\d+):(.+?)\]\]', r'<tg-emoji emoji-id="\1">\2</tg-emoji>', safe_text)
-    
     return safe_text
 
 @router.callback_query(F.data.startswith("approve_post_"))
@@ -68,16 +60,13 @@ async def approve_post(callback: types.CallbackQuery, bot: Bot):
             links = (await session.execute(stmt)).scalars().all()
             if not links: return await callback.answer("❌ Kanallar topilmadi.", show_alert=True)
 
-            count = 0
+            count = 0; error_msg = ""
             for link in links:
                 ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
                 channel = ch_res.scalar_one_or_none()
                 if not channel: continue
                 
-                # Formatlashni qo'llash
                 final_text = apply_final_formatting(post.translated_text, channel.alphabet)
-                
-                # Imzoni qo'shish
                 if channel.signature:
                     sig = hd.quote(channel.signature)
                     if channel.is_bold_signature: sig = f"<b>{sig}</b>"
@@ -86,33 +75,23 @@ async def approve_post(callback: types.CallbackQuery, bot: Bot):
                 try:
                     target_chat = int(channel.channel_id) if (channel.channel_id.startswith('-100') or channel.channel_id.lstrip('-').isdigit()) else channel.channel_id
                     
-                    # URL validmi yoki yo'qmi tekshirish
-                    is_valid_url = post.media_url and (post.media_url.startswith('http://') or post.media_url.startswith('https://'))
-
-                    if is_valid_url:
-                        try:
-                            await bot.send_photo(chat_id=target_chat, photo=post.media_url, caption=final_text, parse_mode="HTML")
-                        except Exception as url_err:
-                            if "wrong HTTP URL" in str(url_err) or "wrong file identifier" in str(url_err):
-                                # Agar URL xato bo'lsa, matnni o'zini yuboramiz
-                                await bot.send_message(chat_id=target_chat, text=final_text, parse_mode="HTML")
-                            else: raise url_err
-                    elif not post.media:
+                    if not post.media:
                         await bot.send_message(chat_id=target_chat, text=final_text, parse_mode="HTML")
                     elif len(post.media) == 1:
                         m = post.media[0]
-                        if m.media_type == 'photo': await bot.send_photo(chat_id=target_chat, photo=m.file_id, caption=final_text, parse_mode="HTML")
-                        else: await bot.send_video(chat_id=target_chat, video=m.file_id, caption=final_text, parse_mode="HTML")
+                        file = FSInputFile(m.file_id) if os.path.exists(m.file_id) else m.file_id
+                        if m.media_type == 'photo': await bot.send_photo(chat_id=target_chat, photo=file, caption=final_text, parse_mode="HTML")
+                        else: await bot.send_video(chat_id=target_chat, video=file, caption=final_text, parse_mode="HTML")
                     else:
                         media_group = []
                         for i, m in enumerate(post.media):
-                            if m.media_type == 'photo': media_group.append(types.InputMediaPhoto(media=m.file_id, caption=final_text if i == 0 else "", parse_mode="HTML"))
-                            else: media_group.append(types.InputMediaVideo(media=m.file_id, caption=final_text if i == 0 else "", parse_mode="HTML"))
+                            file = FSInputFile(m.file_id) if os.path.exists(m.file_id) else m.file_id
+                            if m.media_type == 'photo': media_group.append(types.InputMediaPhoto(media=file, caption=final_text if i == 0 else "", parse_mode="HTML"))
+                            else: media_group.append(types.InputMediaVideo(media=file, caption=final_text if i == 0 else "", parse_mode="HTML"))
                         await bot.send_media_group(chat_id=target_chat, media=media_group)
                     count += 1
                 except Exception as e:
-                    error_msg = str(e)
-                    logger.error(f"Error sending to {channel.channel_name}: {e}")
+                    error_msg = str(e); logger.error(f"Error sending to {channel.channel_name}: {e}")
 
             if count > 0:
                 await session.execute(update(PendingPost).where(PendingPost.id == post_id).values(status="approved"))
@@ -180,19 +159,18 @@ async def edit_post_finish(message: types.Message, state: FSMContext, bot: Bot):
             f"<code>{new_text}</code>"
         )
         
-        if post.media_url:
-            await message.answer_photo(post.media_url, caption=preview_body, reply_markup=get_preview_keyboard(post.id), parse_mode="HTML")
-        elif not post.media:
+        if not post.media:
             await message.answer(preview_body, reply_markup=get_preview_keyboard(post.id), parse_mode="HTML")
         elif len(post.media) == 1:
-            m = post.media[0]
-            if m.media_type == 'photo': await message.answer_photo(m.file_id, caption=preview_body, reply_markup=get_preview_keyboard(post.id), parse_mode="HTML")
-            else: await message.answer_video(m.file_id, caption=preview_body, reply_markup=get_preview_keyboard(post.id), parse_mode="HTML")
+            m = post.media[0]; file = FSInputFile(m.file_id) if os.path.exists(m.file_id) else m.file_id
+            if m.media_type == 'photo': await message.answer_photo(file, caption=preview_body, reply_markup=get_preview_keyboard(post.id), parse_mode="HTML")
+            else: await message.answer_video(file, caption=preview_body, reply_markup=get_preview_keyboard(post.id), parse_mode="HTML")
         else:
             media_group = []
             for i, m in enumerate(post.media):
-                if m.media_type == 'photo': media_group.append(types.InputMediaPhoto(media=m.file_id, caption=preview_body if i == 0 else "", parse_mode="HTML"))
-                else: media_group.append(types.InputMediaVideo(media=m.file_id, caption=preview_body if i == 0 else "", parse_mode="HTML"))
+                file = FSInputFile(m.file_id) if os.path.exists(m.file_id) else m.file_id
+                if m.media_type == 'photo': media_group.append(types.InputMediaPhoto(media=file, caption=preview_body if i == 0 else "", parse_mode="HTML"))
+                else: media_group.append(types.InputMediaVideo(media=file, caption=preview_body if i == 0 else "", parse_mode="HTML"))
             await message.answer_media_group(media=media_group)
             await message.answer("👆 Tahrirlangan albomni tasdiqlaysizmi?", reply_markup=get_preview_keyboard(post.id))
     await state.clear()

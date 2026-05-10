@@ -1,42 +1,26 @@
-import os
 import logging
 import asyncio
-import httpx
+import os
 import re
-from datetime import datetime, date
+import httpx
+from telethon import types
 from sqlalchemy import select, func
 from bot_database.db import AsyncSessionLocal
-from bot_database.models import Source, SourceChannelLink, OutputChannel, User, PendingPost
+from bot_database.models import SourceChannelLink, OutputChannel, User, PendingPost, PostMedia, Source
 from services.translator import TranslatorService
 from aiogram import Bot, types as aiotypes
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from bot.utils.texts import get_text
+from aiogram.types import FSInputFile
+from datetime import datetime, date
 
 logger = logging.getLogger(__name__)
 
 class TwitterMonitor:
-    def __init__(self, translator: TranslatorService, bot: Bot, interval: int = 1800):
-        self.translator = translator; self.bot = bot; self.interval = interval
-        self.api_key = os.getenv("RAPIDAPI_KEY"); self.api_host = os.getenv("RAPIDAPI_HOST")
-
-    async def check_twitter_access(self, username: str):
-        if not self.api_key: return "❌ API Key yo'q"
-        url = f"https://{self.api_host}/timeline.php"
-        params = {"screenname": username.replace("@", "").strip()}
-        headers = {"X-RapidAPI-Key": self.api_key, "X-RapidAPI-Host": self.api_host}
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(url, headers=headers, params=params)
-                if resp.status_code == 200: return "✅ OK"
-                return f"❌ Xato (Status: {resp.status_code})"
-        except Exception as e: return f"❌ Xato: {str(e)}"
-
-    async def start(self):
-        if not self.api_key: return
-        while True:
-            try: await self.check_all_twitter_unique_sources()
-            except Exception as e: logger.error(f"Twitter loop error: {e}")
-            await asyncio.sleep(self.interval) 
+    def __init__(self, api_key, api_host, bot_token, translator: TranslatorService, aiogram_bot: Bot):
+        self.api_key = api_key; self.api_host = api_host; self.bot_token = bot_token
+        self.translator = translator; self.bot = aiogram_bot
+        self.download_path = "downloads"
+        if not os.path.exists(self.download_path): os.makedirs(self.download_path)
 
     async def check_all_twitter_unique_sources(self):
         async with AsyncSessionLocal() as session:
@@ -49,24 +33,7 @@ class TwitterMonitor:
                 if u not in grouped: grouped[u] = []
                 grouped[u].append(src)
             for u, sources in grouped.items():
-                # Pro tarif uchun pauzani 10 soniyaga tushiramiz (tezroq ishlashi uchun)
                 await self.fetch_tweets_api_optimized(u, sources); await asyncio.sleep(10)
-
-    async def check_user_access(self, session, user):
-        """Limitni tekshiradi"""
-        if user.is_admin or user.is_vip: return True
-        
-        today = date.today()
-        count_res = await session.execute(select(func.count(PendingPost.id)).where(
-            PendingPost.user_id == user.id, 
-            PendingPost.created_at >= datetime.combine(today, datetime.min.time())
-        ))
-        count = count_res.scalar() or 0
-        if count >= 5:
-            try: await self.bot.send_message(user.telegram_id, get_text('limit_reached', user.bot_language or 'uz'), parse_mode="HTML")
-            except: pass
-            return False
-        return True
 
     async def fetch_tweets_api_optimized(self, username, sources_list):
         url = f"https://{self.api_host}/timeline.php"; params = {"screenname": username}
@@ -85,27 +52,69 @@ class TwitterMonitor:
                         if tweet.get('retweeted') or 'retweeted_status' in tweet: continue
                         t_id = str(tweet.get('tweet_id') or tweet.get('id_str') or tweet.get('id'))
                         if not t_id: continue
+                        
+                        # Dublikatni tekshirish
                         existing_res = await session.execute(select(PendingPost).where(PendingPost.source_type == "twitter", PendingPost.original_text.contains(t_id)))
                         if existing_res.first(): continue
+                        
                         raw_text = tweet.get('text') or tweet.get('full_text') or ""
                         if not raw_text: continue
+                        
                         media_url = self.find_media_recursive(tweet)
                         clean_text = re.sub(r'https?://\S+|t\.me/\S+|tg://\S+|www\.\S+|@\w+', '', raw_text).strip()
                         if not clean_text and not media_url: continue
-                        for src in sources_list: await self.process_unified_tweet(t_id, clean_text, media_url, src)
+                        
+                        for src in sources_list: 
+                            await self.process_unified_tweet(t_id, clean_text, media_url, src)
         except Exception as e: logger.error(f"API Error for @{username}: {e}")
+
+    async def download_twitter_media(self, url):
+        """Twitter rasmini serverga yuklab oladi"""
+        if not url: return None
+        try:
+            ext = ".jpg"
+            if ".png" in url: ext = ".png"
+            elif ".mp4" in url: ext = ".mp4"
+            
+            filename = f"tw_{int(datetime.now().timestamp())}_{os.urandom(4).hex()}{ext}"
+            path = os.path.join(self.download_path, filename)
+            
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, timeout=30)
+                if resp.status_code == 200:
+                    with open(path, "wb") as f: f.write(resp.content)
+                    return path
+        except Exception as e:
+            logger.error(f"Failed to download Twitter media: {e}")
+        return None
 
     async def process_unified_tweet(self, tweet_id, text, media_url, source_obj):
         async with AsyncSessionLocal() as session:
             links = (await session.execute(select(SourceChannelLink).where(SourceChannelLink.source_id == source_obj.id))).scalars().all()
             if not links: return
-            user = (await session.execute(select(User).where(User.id == source_obj.user_id))).scalar_one_or_none()
+            
+            user_res = await session.execute(select(User).where(User.id == source_obj.user_id))
+            user = user_res.scalars().first()
             if not user or not await self.check_user_access(session, user): return
 
             translated = await self.translator.translate(text, target_lang='uz', target_alphabet='latin', is_twitter=True)
             db_text = f"{text}\n\n#tw_id:{tweet_id}"
-            new_pending = PendingPost(user_id=user.id, source_id=source_obj.id, source_type="twitter", original_text=db_text, translated_text=translated, media_url=media_url)
-            session.add(new_pending); await session.commit()
+            
+            # Medianing o'zini yuklab olish
+            local_file_path = None
+            if media_url:
+                local_file_path = await self.download_twitter_media(media_url)
+
+            new_pending = PendingPost(user_id=user.id, source_id=source_obj.id, source_type="twitter", original_text=db_text, translated_text=translated)
+            session.add(new_pending); await session.flush()
+            
+            media_list = []
+            if local_file_path:
+                m_type = 'video' if local_file_path.endswith('.mp4') else 'photo'
+                pm = PostMedia(post_id=new_pending.id, file_id=local_file_path, media_type=m_type)
+                session.add(pm); media_list.append(pm)
+            
+            await session.commit()
 
             channel_names = []
             for link in links:
@@ -114,8 +123,11 @@ class TwitterMonitor:
                 if ch: channel_names.append(f"📢 {ch.channel_name}")
             
             channels_str = "\n".join(channel_names)
-            header = f"🆕 <b>SHERIK: Yangi post (Twitter)!</b>\n\n📍 <b>Yuboriladigan kanallar:</b>\n{channels_str}\n\n"
-            caption = f"{header}📝 <b>Tarjima (Nusxalash uchun):</b>\n<code>{translated}</code>"
+            preview_body = (
+                f"🆕 <b>SHERIK: Yangi post (Twitter)!</b>\n\n"
+                f"📍 <b>Yuboriladigan kanallar:</b>\n{channels_str}\n\n"
+                f"📝 <b>Tarjima (Nusxalash uchun):</b>\n<code>{translated}</code>"
+            )
             
             chat_id = user.admin_channel_id if user.admin_channel_id else user.telegram_id
             builder = InlineKeyboardBuilder()
@@ -124,13 +136,25 @@ class TwitterMonitor:
             builder.row(aiotypes.InlineKeyboardButton(text="📝 Tahrirlash", callback_data=f"edit_post_{new_pending.id}"))
 
             try:
-                if len(caption) <= 1000:
-                    if media_url: await self.bot.send_photo(chat_id, photo=media_url, caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
-                    else: await self.bot.send_message(chat_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+                if local_file_path:
+                    file = FSInputFile(local_file_path)
+                    if local_file_path.endswith('.mp4'):
+                        await self.bot.send_video(chat_id, video=file, caption=preview_body, reply_markup=builder.as_markup(), parse_mode="HTML")
+                    else:
+                        await self.bot.send_photo(chat_id, photo=file, caption=preview_body, reply_markup=builder.as_markup(), parse_mode="HTML")
                 else:
-                    if media_url: await self.bot.send_photo(chat_id, photo=media_url)
-                    await self.bot.send_message(chat_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+                    await self.bot.send_message(chat_id, preview_body, reply_markup=builder.as_markup(), parse_mode="HTML")
             except Exception as e: logger.error(f"Notify error (Twitter): {e}")
+
+    async def check_user_access(self, session, user):
+        if user.is_admin or user.is_vip: return True
+        today = date.today()
+        count_res = await session.execute(select(func.count(PendingPost.id)).where(
+            PendingPost.user_id == user.id, 
+            PendingPost.created_at >= datetime.combine(today, datetime.min.time())
+        ))
+        count = count_res.scalar() or 0
+        return count < 500 # Pro tarif uchun limitni kengaytirdik
 
     def find_media_recursive(self, obj):
         if isinstance(obj, dict):
