@@ -225,9 +225,12 @@ async def del_src_final(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer("⏳ O'chirilmoqda...")
     sid = int(callback.data.split("_")[-1])
     async with AsyncSessionLocal() as session:
-        from sqlalchemy import delete
-        await session.execute(delete(Source).where(Source.id == sid))
-        await session.commit()
+        # Ob'ektni olamiz va session orqali o'chiramiz (bu cascade o'chirishni ishga tushiradi)
+        res = await session.execute(select(Source).where(Source.id == sid))
+        source = res.scalar_one_or_none()
+        if source:
+            await session.delete(source)
+            await session.commit()
     
     try: await callback.message.delete()
     except: pass

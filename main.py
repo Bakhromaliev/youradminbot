@@ -18,13 +18,15 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+from migrate_db import migrate
 
 async def main():
     logger.info("⏳ Render konflikti oldini olish uchun 60 soniya kutilmoqda...")
     await asyncio.sleep(60)
     
-    # Ma'lumotlar bazasini ishga tushirish va Seeding
+    # Ma'lumotlar bazasini ishga tushirish va Migratsiya
     await init_db()
+    await migrate()
     async with AsyncSessionLocal() as session:
         settings_check = await session.execute(select(BotSettings).where(BotSettings.id == 1))
         if not settings_check.scalar_one_or_none():

@@ -219,9 +219,14 @@ async def delete_channel_start(message: types.Message, state: FSMContext):
 @router.callback_query(F.data.startswith("del_ch_final_"))
 async def delete_channel_finish(callback: types.CallbackQuery, state: FSMContext):
     ch_id = int(callback.data.split("_")[-1])
+    ch_id = int(callback.data.split("_")[-1])
     async with AsyncSessionLocal() as session:
-        await session.execute(delete(OutputChannel).where(OutputChannel.id == ch_id))
-        await session.commit()
+        # Ob'ektni olamiz va session orqali o'chiramiz
+        res = await session.execute(select(OutputChannel).where(OutputChannel.id == ch_id))
+        channel = res.scalar_one_or_none()
+        if channel:
+            await session.delete(channel)
+            await session.commit()
     await callback.message.delete()
     await list_channels(callback.message, state)
 
