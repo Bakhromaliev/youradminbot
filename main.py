@@ -57,8 +57,14 @@ async def main():
     # Monitor-ni handler-larga uzatish
     dp["tg_monitor"] = tg_monitor
     
+    rapid_key = os.getenv("RAPIDAPI_KEY")
+    if rapid_key:
+        logger.info(f"RapidAPI Key found: {rapid_key[:4]}***")
+    else:
+        logger.error("CRITICAL: RAPIDAPI_KEY NOT FOUND IN ENVIRONMENT!")
+
     tw_monitor = TwitterMonitor(
-        api_key=os.getenv("RAPIDAPI_KEY"),
+        api_key=rapid_key,
         api_host=os.getenv("RAPIDAPI_HOST", "twitter-api45.p.rapidapi.com"),
         bot_token=os.getenv("BOT_TOKEN"),
         translator=translator,
