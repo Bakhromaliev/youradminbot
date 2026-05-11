@@ -17,20 +17,40 @@ logger = logging.getLogger(__name__)
 
 class TwitterMonitor:
     def __init__(self, api_key, api_host, bot_token, translator: TranslatorService, aiogram_bot: Bot):
-        self.api_key = api_key; self.api_host = api_host; self.bot_token = bot_token
+        self.api_key = api_key if api_key else ""
+        self.api_host = api_host if api_host else "twitter-api45.p.rapidapi.com"
+        self.bot_token = bot_token
         self.translator = translator; self.bot = aiogram_bot
         self.download_path = "downloads"
         if not os.path.exists(self.download_path): os.makedirs(self.download_path)
+
+    async def check_twitter_access(self, source_id: str):
+        """Admin panelda manbani tekshirish uchun"""
+        if not self.api_key: return "❌ API Key topilmadi"
+        username = source_id.replace("@", "").strip().lower()
+        url = f"https://{self.api_host}/timeline.php"
+        params = {"screenname": username}
+        headers = {"X-RapidAPI-Key": self.api_key, "X-RapidAPI-Host": self.api_host}
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.get(url, headers=headers, params=params)
+                if response.status_code == 200: return "✅ OK (Twitter)"
+                return f"❌ Xato: {response.status_code}"
+        except Exception as e:
+            return f"❌ Ulanishda xato: {str(e)}"
 
     async def start(self):
         """Monitorning asosiy sikli"""
         logger.info("Twitter Monitor starting...")
         while True:
             try:
-                await self.check_all_twitter_unique_sources()
+                if self.api_key:
+                    await self.check_all_twitter_unique_sources()
+                else:
+                    logger.warning("Twitter API Key is missing. Skipping cycle.")
             except Exception as e:
                 logger.error(f"Twitter loop error: {e}")
-            await asyncio.sleep(300) # Har 5 daqiqada tekshiradi
+            await asyncio.sleep(300)
 
     async def check_all_twitter_unique_sources(self):
         async with AsyncSessionLocal() as session:
@@ -46,6 +66,7 @@ class TwitterMonitor:
                 await self.fetch_tweets_api_optimized(u, sources); await asyncio.sleep(10)
 
     async def fetch_tweets_api_optimized(self, username, sources_list):
+        if not self.api_key: return
         url = f"https://{self.api_host}/timeline.php"; params = {"screenname": username}
         headers = {"X-RapidAPI-Key": self.api_key, "X-RapidAPI-Host": self.api_host}
         try:
@@ -63,7 +84,6 @@ class TwitterMonitor:
                         t_id = str(tweet.get('tweet_id') or tweet.get('id_str') or tweet.get('id'))
                         if not t_id: continue
                         
-                        # Dublikatni tekshirish
                         existing_res = await session.execute(select(PendingPost).where(PendingPost.source_type == "twitter", PendingPost.original_text.contains(t_id)))
                         if existing_res.first(): continue
                         
@@ -79,16 +99,13 @@ class TwitterMonitor:
         except Exception as e: logger.error(f"API Error for @{username}: {e}")
 
     async def download_twitter_media(self, url):
-        """Twitter rasmini serverga yuklab oladi"""
         if not url: return None
         try:
             ext = ".jpg"
             if ".png" in url: ext = ".png"
             elif ".mp4" in url: ext = ".mp4"
-            
             filename = f"tw_{int(datetime.now().timestamp())}_{os.urandom(4).hex()}{ext}"
             path = os.path.join(self.download_path, filename)
-            
             async with httpx.AsyncClient() as client:
                 resp = await client.get(url, timeout=30)
                 if resp.status_code == 200:
@@ -109,11 +126,8 @@ class TwitterMonitor:
 
             translated = await self.translator.translate(text, target_lang='uz', target_alphabet='latin', is_twitter=True)
             db_text = f"{text}\n\n#tw_id:{tweet_id}"
-            
-            # Medianing o'zini yuklab olish
             local_file_path = None
-            if media_url:
-                local_file_path = await self.download_twitter_media(media_url)
+            if media_url: local_file_path = await self.download_twitter_media(media_url)
 
             new_pending = PendingPost(user_id=user.id, source_id=source_obj.id, source_type="twitter", original_text=db_text, translated_text=translated)
             session.add(new_pending); await session.flush()
@@ -123,7 +137,6 @@ class TwitterMonitor:
                 m_type = 'video' if local_file_path.endswith('.mp4') else 'photo'
                 pm = PostMedia(post_id=new_pending.id, file_id=local_file_path, media_type=m_type)
                 session.add(pm); media_list.append(pm)
-            
             await session.commit()
 
             channel_names = []
@@ -164,7 +177,7 @@ class TwitterMonitor:
             PendingPost.created_at >= datetime.combine(today, datetime.min.time())
         ))
         count = count_res.scalar() or 0
-        return count < 500 # Pro tarif uchun limitni kengaytirdik
+        return count < 1000
 
     def find_media_recursive(self, obj):
         if isinstance(obj, dict):
