@@ -149,7 +149,8 @@ class TelegramMonitor:
                         pm = PostMedia(post_id=new_pending.id, file_id=path, media_type=m_type)
                         session.add(pm); media_list.append(pm)
                 await session.commit()
-                await self.send_preview(user, new_pending, user_links, media_list)
+                # file_id larni Telegram serverida saqlash uchun preview yuboramiz
+                await self.send_preview(user, new_pending, user_links, media_list, session_ref=session)
 
     async def process_single_message(self, message):
         chat = await message.get_chat()
@@ -192,9 +193,9 @@ class TelegramMonitor:
                     pm = PostMedia(post_id=new_pending.id, file_id=file_path, media_type=m_type)
                     session.add(pm); media_list.append(pm)
                 await session.commit()
-                await self.send_preview(user, new_pending, user_links, media_list)
+                await self.send_preview(user, new_pending, user_links, media_list, session_ref=session)
 
-    async def send_preview(self, user, post, links, media_list):
+    async def send_preview(self, user, post, links, media_list, session_ref=None):
         chat_id = user.admin_channel_id if user.admin_channel_id else user.telegram_id
         builder = InlineKeyboardBuilder()
         builder.row(aiotypes.InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"approve_post_{post.id}"),
@@ -216,20 +217,61 @@ class TelegramMonitor:
         )
 
         try:
-            if len(caption) <= 1000:
-                if not media_list: await self.bot.send_message(chat_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
-                elif len(media_list) == 1:
-                    m = media_list[0]; file = FSInputFile(m.file_id)
-                    if m.media_type == 'photo': await self.bot.send_photo(chat_id, file, caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
-                    else: await self.bot.send_video(chat_id, file, caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
-                else:
-                    media_group = []
-                    for i, m in enumerate(media_list):
-                        file = FSInputFile(m.file_id)
-                        if m.media_type == 'photo': media_group.append(aiotypes.InputMediaPhoto(media=file, caption=caption if i == 0 else "", parse_mode="HTML"))
-                        else: media_group.append(aiotypes.InputMediaVideo(media=file, caption=caption if i == 0 else "", parse_mode="HTML"))
-                    await self.bot.send_media_group(chat_id, media_group)
-                    await self.bot.send_message(chat_id, "👆 Yuqoridagi albomni tasdiqlaysizmi?", reply_markup=builder.as_markup())
-            else:
+            if not media_list:
                 await self.bot.send_message(chat_id, caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+            elif len(media_list) == 1:
+                m = media_list[0]
+                file = FSInputFile(m.file_id) if os.path.exists(m.file_id) else m.file_id
+                cap = caption if len(caption) <= 1024 else post.translated_text[:1000]
+                if m.media_type == 'photo':
+                    msg = await self.bot.send_photo(chat_id, file, caption=cap, reply_markup=builder.as_markup(), parse_mode="HTML")
+                    # Telegram file_id ni saqlaymiz (mahalliy faylni o'chiramiz)
+                    tg_file_id = msg.photo[-1].file_id
+                else:
+                    msg = await self.bot.send_video(chat_id, file, caption=cap, reply_markup=builder.as_markup(), parse_mode="HTML")
+                    tg_file_id = msg.video.file_id
+                # Bazada file_id ni Telegram file_id ga yangilaymiz
+                async with AsyncSessionLocal() as upd_session:
+                    from sqlalchemy import update as sql_update
+                    await upd_session.execute(sql_update(PostMedia).where(PostMedia.post_id == post.id).values(file_id=tg_file_id))
+                    await upd_session.commit()
+                # Mahalliy faylni o'chiramiz
+                if os.path.exists(m.file_id):
+                    try: os.remove(m.file_id)
+                    except: pass
+            else:
+                # Albom: Telegramga yuklab, file_id larni olamiz
+                media_group = []
+                local_paths = []
+                for i, m in enumerate(media_list):
+                    file = FSInputFile(m.file_id) if os.path.exists(m.file_id) else m.file_id
+                    local_paths.append(m.file_id)
+                    cap = caption if (i == 0 and len(caption) <= 1024) else ""
+                    if m.media_type == 'photo': media_group.append(aiotypes.InputMediaPhoto(media=file, caption=cap, parse_mode="HTML"))
+                    else: media_group.append(aiotypes.InputMediaVideo(media=file, caption=cap, parse_mode="HTML"))
+                
+                sent_messages = await self.bot.send_media_group(chat_id, media_group)
+                
+                # Yuborilgan xabarlardan file_id larni olib, bazaga saqlaymiz
+                async with AsyncSessionLocal() as upd_session:
+                    db_medias = (await upd_session.execute(select(PostMedia).where(PostMedia.post_id == post.id))).scalars().all()
+                    for i, (db_m, sent_msg) in enumerate(zip(db_medias, sent_messages)):
+                        if sent_msg.photo: tg_fid = sent_msg.photo[-1].file_id
+                        elif sent_msg.video: tg_fid = sent_msg.video.file_id
+                        else: continue
+                        db_m.file_id = tg_fid
+                    await upd_session.commit()
+                
+                # Mahalliy fayllarni o'chiramiz
+                for lp in local_paths:
+                    if lp and os.path.exists(lp):
+                        try: os.remove(lp)
+                        except: pass
+                
+                # Tasdiqlash tugmalarini albom ostiga yuboramiz
+                await self.bot.send_message(chat_id, "👆 Yuqoridagi albomni tasdiqlaysizmi?", reply_markup=builder.as_markup())
+                
+                # Agar caption uzun bo'lsa, matnni alohida yuboramiz
+                if len(caption) > 1024:
+                    await self.bot.send_message(chat_id, caption, parse_mode="HTML")
         except Exception as e: logger.error(f"Notify error: {e}")
