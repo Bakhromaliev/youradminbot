@@ -117,13 +117,18 @@ async def approve_post(callback: types.CallbackQuery, bot: Bot):
                             for i, m in enumerate(post.media):
                                 is_local = m.file_id.startswith('/') or m.file_id.startswith('downloads/')
                                 if is_local and not os.path.exists(m.file_id): continue
-                                if m.media_type == 'photo': media_group.append(types.InputMediaPhoto(media=m.file_id, caption=final_text if i == 0 else "", parse_mode="HTML"))
-                                else: media_group.append(types.InputMediaVideo(media=m.file_id, caption=final_text if i == 0 else "", parse_mode="HTML"))
+                                # Media group captioni max 1024 belgi — uzun bo'lsa bo'sh qoldiramiz
+                                cap = final_text if (i == 0 and len(final_text) <= 1024) else ""
+                                if m.media_type == 'photo': media_group.append(types.InputMediaPhoto(media=m.file_id, caption=cap, parse_mode="HTML"))
+                                else: media_group.append(types.InputMediaVideo(media=m.file_id, caption=cap, parse_mode="HTML"))
                             
                             if media_group:
                                 try:
                                     await bot.send_media_group(chat_id=target_chat, media=media_group)
                                     sent = True
+                                    # Agar caption uzun bo'lsa, matnni alohida yuboramiz
+                                    if len(final_text) > 1024:
+                                        await bot.send_message(chat_id=target_chat, text=final_text, parse_mode="HTML")
                                 except: pass
 
                     if not sent and post.media_url:
