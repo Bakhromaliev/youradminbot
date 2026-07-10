@@ -149,18 +149,21 @@ class TelegramMonitor:
                 session.add(new_pending); await session.flush()
                 
                 media_list = []
+                media_info = []  # Commit oldidan saqlaymiz (ORM expired bo'lmasligi uchun)
                 for m in messages:
                     if m.media:
                         path = await m.download_media(file=f"{self.download_path}/")
                         m_type = 'photo' if hasattr(m.media, 'photo') else 'video'
                         pm = PostMedia(post_id=new_pending.id, file_id=path, media_type=m_type)
-                        session.add(pm); media_list.append(pm)
+                        session.add(pm)
+                        media_list.append(pm)
+                        media_info.append({'file_id': path, 'media_type': m_type})  # Plain dict
                 await session.commit()
                 
                 # auto_approve: to'g'ridan-to'g'ri yuborish yoki tasdiq so'rash
                 source_obj = (await session.execute(select(Source).where(Source.id == s_id))).scalars().first()
                 if source_obj and source_obj.auto_approve:
-                    await self.send_direct(new_pending, user_links, media_list)
+                    await self.send_direct(new_pending, user_links, media_info)
                 else:
                     await self.send_preview(user, new_pending, user_links, media_list, session_ref=session)
 
@@ -207,37 +210,43 @@ class TelegramMonitor:
                 new_pending = PendingPost(user_id=u_id, source_id=s_id, source_type="telegram", original_text=text, translated_text=translated)
                 session.add(new_pending); await session.flush()
                 media_list = []
+                media_info = []  # Commit oldidan saqlaymiz (ORM expired bo'lmasligi uchun)
                 if file_path:
                     pm = PostMedia(post_id=new_pending.id, file_id=file_path, media_type=m_type)
-                    session.add(pm); media_list.append(pm)
+                    session.add(pm)
+                    media_list.append(pm)
+                    media_info.append({'file_id': file_path, 'media_type': m_type})  # Plain dict
                 await session.commit()
                 
                 # auto_approve: to'g'ridan-to'g'ri yuborish yoki tasdiq so'rash
                 source_obj = (await session.execute(select(Source).where(Source.id == s_id))).scalars().first()
                 if source_obj and source_obj.auto_approve:
-                    await self.send_direct(new_pending, user_links, media_list)
+                    await self.send_direct(new_pending, user_links, media_info)
                 else:
                     await self.send_preview(user, new_pending, user_links, media_list, session_ref=session)
 
-    async def send_direct(self, post, links, media_list):
-        """Auto-approve: Postni tasdiqsiz to'g'ridan-to'g'ri kanallarga yuboradi"""
+    async def send_direct(self, post, links, media_info):
+        """Auto-approve: Postni tasdiqsiz to'g'ridan-to'g'ri kanallarga yuboradi.
+        media_info — plain dict ro'yxati: [{'file_id': '...', 'media_type': 'photo/video'}, ...]
+        """
         from bot.handlers.approval import apply_final_formatting
         from aiogram.utils.markdown import html_decoration as hd
         from sqlalchemy import update as sql_update
 
-        def _get_file(file_id):
-            """Mahalliy fayl yo'li bo'lsa FSInputFile, aks holda file_id o'zi"""
-            if file_id and (file_id.startswith('/') or file_id.startswith('downloads/')):
-                if os.path.exists(file_id):
-                    return FSInputFile(file_id)
+        def _make_file(file_id):
+            """Mahalliy fayl bo'lsa FSInputFile, Telegram file_id bo'lsa o'zi"""
+            if not file_id:
+                return None
+            # Har qanday URL bo'lmagan string — mahalliy fayl deb hisoblaymiz
+            if not file_id.startswith('http') and '/' in file_id or file_id.startswith('downloads'):
+                return FSInputFile(file_id)
             return file_id
 
         sent_count = 0
-        # Birinchi kanalga yuborganda Telegram file_id lari olinadi, keyin ishlatiladi
-        tg_file_ids = {}  # index -> tg_file_id
+        tg_file_ids = {}  # index -> Telegram file_id (birinchi kanaldan olinadi, qolganlar uchun ishlatiladi)
 
         async with AsyncSessionLocal() as session:
-            for link_idx, link in enumerate(links):
+            for link in links:
                 ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
                 channel = ch_res.scalar_one_or_none()
                 if not channel: continue
@@ -252,46 +261,48 @@ class TelegramMonitor:
 
                     sent = False
 
-                    if media_list:
-                        if len(media_list) == 1:
-                            m = media_list[0]
-                            # Agar oldindan tg_file_id olingan bo'lsa, uni ishlatamiz
-                            file = tg_file_ids.get(0) or _get_file(m.file_id)
-                            try:
-                                if m.media_type == 'photo':
+                    if media_info:
+                        if len(media_info) == 1:
+                            item = media_info[0]
+                            file = tg_file_ids.get(0) or _make_file(item['file_id'])
+                            if not file:
+                                pass
+                            elif item['media_type'] == 'photo':
+                                try:
                                     msg = await self.bot.send_photo(chat_id=target_chat, photo=file, caption=final_text, parse_mode="HTML")
-                                    if 0 not in tg_file_ids:
-                                        tg_file_ids[0] = msg.photo[-1].file_id
-                                else:
+                                    if 0 not in tg_file_ids: tg_file_ids[0] = msg.photo[-1].file_id
+                                    sent = True
+                                except Exception as e:
+                                    logger.error(f"send_direct photo error: {e}")
+                            else:
+                                try:
                                     msg = await self.bot.send_video(chat_id=target_chat, video=file, caption=final_text, parse_mode="HTML")
-                                    if 0 not in tg_file_ids:
-                                        tg_file_ids[0] = msg.video.file_id
-                                sent = True
-                            except Exception as e:
-                                logger.error(f"send_direct single media error: {e}")
-
+                                    if 0 not in tg_file_ids: tg_file_ids[0] = msg.video.file_id
+                                    sent = True
+                                except Exception as e:
+                                    logger.error(f"send_direct video error: {e}")
                         else:
-                            # Ko'p rasmlarda birinchi yuborishda file_id larni olamiz
                             media_group = []
-                            for i, m in enumerate(media_list):
-                                file = tg_file_ids.get(i) or _get_file(m.file_id)
+                            for i, item in enumerate(media_info):
+                                file = tg_file_ids.get(i) or _make_file(item['file_id'])
+                                if not file: continue
                                 cap = final_text if (i == 0 and len(final_text) <= 1024) else ""
-                                if m.media_type == 'photo':
+                                if item['media_type'] == 'photo':
                                     media_group.append(aiotypes.InputMediaPhoto(media=file, caption=cap, parse_mode="HTML"))
                                 else:
                                     media_group.append(aiotypes.InputMediaVideo(media=file, caption=cap, parse_mode="HTML"))
-                            try:
-                                sent_msgs = await self.bot.send_media_group(chat_id=target_chat, media=media_group)
-                                # Birinchi yuborishda file_id larni saqlaymiz
-                                if not tg_file_ids:
-                                    for i, msg in enumerate(sent_msgs):
-                                        if msg.photo: tg_file_ids[i] = msg.photo[-1].file_id
-                                        elif msg.video: tg_file_ids[i] = msg.video.file_id
-                                sent = True
-                                if len(final_text) > 1024:
-                                    await self.bot.send_message(chat_id=target_chat, text=final_text, parse_mode="HTML")
-                            except Exception as e:
-                                logger.error(f"send_direct media group error: {e}")
+                            if media_group:
+                                try:
+                                    sent_msgs = await self.bot.send_media_group(chat_id=target_chat, media=media_group)
+                                    if not tg_file_ids:
+                                        for i, msg in enumerate(sent_msgs):
+                                            if msg.photo: tg_file_ids[i] = msg.photo[-1].file_id
+                                            elif msg.video: tg_file_ids[i] = msg.video.file_id
+                                    sent = True
+                                    if len(final_text) > 1024:
+                                        await self.bot.send_message(chat_id=target_chat, text=final_text, parse_mode="HTML")
+                                except Exception as e:
+                                    logger.error(f"send_direct media group error: {e}")
 
                     if not sent:
                         await self.bot.send_message(chat_id=target_chat, text=final_text, parse_mode="HTML")
@@ -299,12 +310,13 @@ class TelegramMonitor:
 
                     if sent: sent_count += 1
                 except Exception as e:
-                    logger.error(f"send_direct error for channel {channel.channel_id}: {e}")
+                    logger.error(f"send_direct channel error: {e}")
 
             # Mahalliy fayllarni o'chiramiz
-            for m in media_list:
-                if m.file_id and os.path.exists(m.file_id):
-                    try: os.remove(m.file_id)
+            for item in media_info:
+                fid = item.get('file_id', '')
+                if fid and os.path.exists(fid):
+                    try: os.remove(fid)
                     except: pass
 
             if sent_count > 0:
