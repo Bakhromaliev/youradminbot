@@ -13,6 +13,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import FSInputFile
 from datetime import datetime, date
 from bot.utils.texts import get_text
+from services.content_filter import is_spam_or_gambling
 import re as _re
 
 def _decode_premium_emojis(text: str) -> str:
@@ -136,6 +137,12 @@ class TelegramMonitor:
                 if not user or not await self.check_user_access(session, user): continue
 
                 clean_text = re.sub(r'https?://\S+|t\.me/\S+|tg://\S+|www\.\S+|@\w+', '', text).strip()
+                
+                # Reklama / qimor filtri
+                if is_spam_or_gambling(clean_text) or is_spam_or_gambling(text):
+                    logger.debug(f"[FILTER] Media group spam blocked for source {s_id}")
+                    continue
+                
                 translated = await self.translator.translate(clean_text, target_lang='uz', target_alphabet='latin')
                 
                 new_pending = PendingPost(user_id=u_id, source_id=s_id, source_type="telegram", original_text=text, translated_text=translated, media_group_id=str(gid))
@@ -188,6 +195,12 @@ class TelegramMonitor:
                 if not user or not await self.check_user_access(session, user): continue
 
                 clean_text = re.sub(r'https?://\S+|t\.me/\S+|tg://\S+|www\.\S+|@\w+', '', text).strip()
+                
+                # Reklama / qimor filtri
+                if is_spam_or_gambling(clean_text) or is_spam_or_gambling(text):
+                    logger.debug(f"[FILTER] Single message spam blocked for source {s_id}")
+                    continue
+                
                 translated = await self.translator.translate(clean_text, target_lang='uz', target_alphabet='latin')
                 translated = _decode_premium_emojis(translated)
                 

@@ -12,6 +12,7 @@ from aiogram import Bot, types as aiotypes
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import FSInputFile
 from datetime import datetime, date
+from services.content_filter import is_spam_or_gambling
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,12 @@ class TwitterMonitor:
                         if not raw_text: continue
                         media_url = self.find_media_recursive(tweet)
                         clean_text = re.sub(r'https?://\S+|t\.me/\S+|tg://\S+|www\.\S+|@\w+', '', raw_text).strip()
+                        
+                        # Reklama / qimor filtri
+                        if is_spam_or_gambling(raw_text) or is_spam_or_gambling(clean_text):
+                            logger.debug(f"[FILTER] Twitter spam blocked: {raw_text[:60]}")
+                            continue
+                        
                         if not clean_text and not media_url: continue
                         for src in sources_list: await self.process_unified_tweet(t_id, clean_text, media_url, src)
         except Exception as e: logger.error(f"API Error for @{username}: {e}")
