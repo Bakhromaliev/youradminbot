@@ -149,8 +149,13 @@ class TelegramMonitor:
                         pm = PostMedia(post_id=new_pending.id, file_id=path, media_type=m_type)
                         session.add(pm); media_list.append(pm)
                 await session.commit()
-                # file_id larni Telegram serverida saqlash uchun preview yuboramiz
-                await self.send_preview(user, new_pending, user_links, media_list, session_ref=session)
+                
+                # auto_approve: to'g'ridan-to'g'ri yuborish yoki tasdiq so'rash
+                source_obj = (await session.execute(select(Source).where(Source.id == s_id))).scalars().first()
+                if source_obj and source_obj.auto_approve:
+                    await self.send_direct(new_pending, user_links, media_list)
+                else:
+                    await self.send_preview(user, new_pending, user_links, media_list, session_ref=session)
 
     async def process_single_message(self, message):
         chat = await message.get_chat()
@@ -193,7 +198,76 @@ class TelegramMonitor:
                     pm = PostMedia(post_id=new_pending.id, file_id=file_path, media_type=m_type)
                     session.add(pm); media_list.append(pm)
                 await session.commit()
-                await self.send_preview(user, new_pending, user_links, media_list, session_ref=session)
+                
+                # auto_approve: to'g'ridan-to'g'ri yuborish yoki tasdiq so'rash
+                source_obj = (await session.execute(select(Source).where(Source.id == s_id))).scalars().first()
+                if source_obj and source_obj.auto_approve:
+                    await self.send_direct(new_pending, user_links, media_list)
+                else:
+                    await self.send_preview(user, new_pending, user_links, media_list, session_ref=session)
+
+    async def send_direct(self, post, links, media_list):
+        """Auto-approve: Postni tasdiqsiz to'g'ridan-to'g'ri kanallarga yuboradi"""
+        from bot.handlers.approval import apply_final_formatting
+        from aiogram.utils.markdown import html_decoration as hd
+        from sqlalchemy import update as sql_update
+        
+        sent_count = 0
+        async with AsyncSessionLocal() as session:
+            for link in links:
+                ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
+                channel = ch_res.scalar_one_or_none()
+                if not channel: continue
+                
+                try:
+                    target_chat = int(channel.channel_id) if (channel.channel_id.startswith('-100') or channel.channel_id.lstrip('-').isdigit()) else channel.channel_id
+                    final_text = apply_final_formatting(post.translated_text, channel.alphabet)
+                    if channel.signature:
+                        sig = hd.quote(channel.signature)
+                        if channel.is_bold_signature: sig = f"<b>{sig}</b>"
+                        final_text += ("\n" * (channel.signature_spacing + 1)) + sig
+                    
+                    sent = False
+                    if media_list:
+                        if len(media_list) == 1:
+                            m = media_list[0]
+                            file = m.file_id  # Telegram file_id
+                            try:
+                                if m.media_type == 'photo':
+                                    await self.bot.send_photo(chat_id=target_chat, photo=file, caption=final_text, parse_mode="HTML")
+                                else:
+                                    await self.bot.send_video(chat_id=target_chat, video=file, caption=final_text, parse_mode="HTML")
+                                sent = True
+                            except Exception as e:
+                                logger.error(f"send_direct single media error: {e}")
+                        else:
+                            media_group = []
+                            for i, m in enumerate(media_list):
+                                cap = final_text if (i == 0 and len(final_text) <= 1024) else ""
+                                if m.media_type == 'photo':
+                                    media_group.append(aiotypes.InputMediaPhoto(media=m.file_id, caption=cap, parse_mode="HTML"))
+                                else:
+                                    media_group.append(aiotypes.InputMediaVideo(media=m.file_id, caption=cap, parse_mode="HTML"))
+                            try:
+                                await self.bot.send_media_group(chat_id=target_chat, media=media_group)
+                                sent = True
+                                if len(final_text) > 1024:
+                                    await self.bot.send_message(chat_id=target_chat, text=final_text, parse_mode="HTML")
+                            except Exception as e:
+                                logger.error(f"send_direct media group error: {e}")
+                    
+                    if not sent:
+                        await self.bot.send_message(chat_id=target_chat, text=final_text, parse_mode="HTML")
+                        sent = True
+                    
+                    if sent: sent_count += 1
+                except Exception as e:
+                    logger.error(f"send_direct error for channel {channel.channel_id}: {e}")
+            
+            if sent_count > 0:
+                await session.execute(sql_update(PendingPost).where(PendingPost.id == post.id).values(status="approved"))
+                await session.commit()
+                logger.info(f"Auto-approved post {post.id} sent to {sent_count} channels")
 
     async def send_preview(self, user, post, links, media_list, session_ref=None):
         chat_id = user.admin_channel_id if user.admin_channel_id else user.telegram_id

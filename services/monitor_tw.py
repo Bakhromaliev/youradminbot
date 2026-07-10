@@ -153,13 +153,58 @@ class TwitterMonitor:
             
             await session.commit()
             
-            if not local_file_path: # Agar rasm bo'lmasa, matnni o'zini yuboramiz
+            # auto_approve: to'g'ridan-to'g'ri yuborish yoki tasdiq so'rash
+            if source_obj.auto_approve:
+                media_objs = (await session.execute(select(PostMedia).where(PostMedia.post_id == new_pending.id))).scalars().all()
+                await self.send_direct_tw(new_pending, links, media_objs)
+            elif not local_file_path:
                 preview_body = f"🆕 <b>SHERIK: Yangi post (Twitter)!</b>\n\n📝 <code>{translated}</code>"
                 builder = InlineKeyboardBuilder()
                 builder.row(aiotypes.InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"approve_post_{new_pending.id}"),
                             aiotypes.InlineKeyboardButton(text="❌ Rad etish", callback_data=f"reject_post_{new_pending.id}"))
                 builder.row(aiotypes.InlineKeyboardButton(text="📝 Tahrirlash", callback_data=f"edit_post_{new_pending.id}"))
                 await self.bot.send_message(chat_id, preview_body, reply_markup=builder.as_markup(), parse_mode="HTML")
+
+    async def send_direct_tw(self, post, links, media_list):
+        """Twitter auto-approve: Postni tasdiqsiz to'g'ridan-to'g'ri kanallarga yuboradi"""
+        from bot.handlers.approval import apply_final_formatting
+        from aiogram.utils.markdown import html_decoration as hd
+        from sqlalchemy import update as sql_update
+
+        sent_count = 0
+        async with AsyncSessionLocal() as session:
+            for link in links:
+                ch_res = await session.execute(select(OutputChannel).where(OutputChannel.id == link.channel_db_id))
+                channel = ch_res.scalar_one_or_none()
+                if not channel: continue
+                try:
+                    target_chat = int(channel.channel_id) if (channel.channel_id.startswith('-100') or channel.channel_id.lstrip('-').isdigit()) else channel.channel_id
+                    final_text = apply_final_formatting(post.translated_text, channel.alphabet)
+                    if channel.signature:
+                        sig = hd.quote(channel.signature)
+                        if channel.is_bold_signature: sig = f"<b>{sig}</b>"
+                        final_text += ("\n" * (channel.signature_spacing + 1)) + sig
+                    sent = False
+                    if media_list:
+                        m = media_list[0]
+                        try:
+                            if m.media_type == 'video':
+                                await self.bot.send_video(chat_id=target_chat, video=m.file_id, caption=final_text, parse_mode="HTML")
+                            else:
+                                await self.bot.send_photo(chat_id=target_chat, photo=m.file_id, caption=final_text, parse_mode="HTML")
+                            sent = True
+                        except Exception as e:
+                            logger.error(f"send_direct_tw media error: {e}")
+                    if not sent:
+                        await self.bot.send_message(chat_id=target_chat, text=final_text, parse_mode="HTML")
+                        sent = True
+                    if sent: sent_count += 1
+                except Exception as e:
+                    logger.error(f"send_direct_tw error: {e}")
+            if sent_count > 0:
+                await session.execute(sql_update(PendingPost).where(PendingPost.id == post.id).values(status="approved"))
+                await session.commit()
+                logger.info(f"Twitter auto-approved post {post.id} sent to {sent_count} channels")
 
     async def check_user_access(self, session, user):
         if user.is_admin or user.is_vip: return True

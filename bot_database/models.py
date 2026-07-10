@@ -28,6 +28,7 @@ class Source(Base):
     source_id = Column(String)
     source_name = Column(String)
     source_type = Column(String)
+    auto_approve = Column(Boolean, default=False)  # True = to'g'ridan-to'g'ri kanal, False = tasdiq kerak
     
     links = relationship("SourceChannelLink", back_populates="source", cascade="all, delete-orphan")
     pending_posts = relationship("PendingPost", back_populates="source", cascade="all, delete-orphan")

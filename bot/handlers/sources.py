@@ -4,7 +4,7 @@ import os
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
 from bot_database.db import AsyncSessionLocal
 from bot_database.models import User, Source, SourceChannelLink, OutputChannel
 from bot.utils.texts import get_text
@@ -14,6 +14,7 @@ router = Router()
 
 class SourceStates(StatesGroup):
     waiting_for_source_id = State()
+    waiting_for_approve_mode = State()   # Yangi: tasdiq rejimini tanlash
     viewing_source = State()
     confirm_unlink = State()
 
@@ -27,22 +28,18 @@ async def get_user_lang(user_id: int):
 @router.message(lambda m: m.text in [get_text('btn_sources', 'uz'), get_text('btn_sources', 'ru'), get_text('btn_sources', 'en')])
 @router.message(F.text.contains("Orqaga") | F.text.contains("Назад") | F.text.contains("Back") | F.text.contains("Bekor qilish"))
 async def list_sources_msg(message: types.Message, state: FSMContext, override_text=None):
-    # Har qanday "Orqaga" yoki "Bekor qilish" bosilganda shu yerga keladi
     await state.clear()
     async with AsyncSessionLocal() as session:
         user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
         user = user_res.scalar_one_or_none()
         
         if not user:
-            # Agar foydalanuvchi bazada yo'q bo'lsa, uni yaratishga harakat qilamiz (fail-safe)
             user = User(telegram_id=message.from_user.id, username=message.from_user.username, is_approved=True)
             session.add(user)
             await session.commit()
             await session.refresh(user)
 
         lang = user.bot_language or 'uz'
-        SUPER_ADMIN_ID = 1400240097
-        is_admin = (user.telegram_id == SUPER_ADMIN_ID) or user.is_admin
         sources_res = await session.execute(select(Source).where(Source.user_id == user.id))
         sources = sources_res.scalars().all()
 
@@ -70,24 +67,54 @@ async def add_source_start(message: types.Message, state: FSMContext):
     await message.answer(prompt, reply_markup=builder.as_markup(resize_keyboard=True), parse_mode="HTML")
 
 @router.message(SourceStates.waiting_for_source_id)
-async def add_src_save(message: types.Message, state: FSMContext, tg_monitor=None):
+async def add_src_id_received(message: types.Message, state: FSMContext, tg_monitor=None):
     data = await state.get_data()
     src_id = message.text.strip()
     async with AsyncSessionLocal() as session:
         user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
         user = user_res.scalar_one()
-        
-        # Tekshiramiz: bu manba foydalanuvchida allaqachon bormi?
         existing = await session.execute(select(Source).where(Source.user_id == user.id, Source.source_id == src_id))
         if existing.scalar_one_or_none():
             return await list_sources_msg(message, state, override_text="⚠️ Bu manba allaqachon qo'shilgan!")
 
-        new_src = Source(user_id=user.id, source_type=data['source_type'], source_id=src_id, source_name=src_id)
-        session.add(new_src); await session.commit()
+    # source_id ni saqlab, tasdiq rejimini so'raymiz
+    await state.update_data(pending_source_id=src_id, tg_monitor_set=(tg_monitor is not None))
+    await state.set_state(SourceStates.waiting_for_approve_mode)
+
+    builder = ReplyKeyboardBuilder()
+    builder.row(
+        types.KeyboardButton(text="🔍 Tasdiq bilan"),
+        types.KeyboardButton(text="⚡ Avtomatik")
+    )
+    builder.row(types.KeyboardButton(text="❌ Bekor qilish"))
+    await message.answer(
+        f"✅ <b>{src_id}</b> — manba tayyor!\n\n"
+        f"📬 Bu manbadan kelgan postlar qanday yuborilsin?\n\n"
+        f"🔍 <b>Tasdiq bilan</b> — har bir post siz tasdiqlashingizni kutadi\n"
+        f"⚡ <b>Avtomatik</b> — postlar to'g'ridan-to'g'ri kanalga ketadi",
+        reply_markup=builder.as_markup(resize_keyboard=True),
+        parse_mode="HTML"
+    )
+
+@router.message(SourceStates.waiting_for_approve_mode, F.text.in_(["🔍 Tasdiq bilan", "⚡ Avtomatik"]))
+async def add_src_save(message: types.Message, state: FSMContext, tg_monitor=None):
+    data = await state.get_data()
+    src_id = data['pending_source_id']
+    s_type = data['source_type']
+    auto_approve = message.text == "⚡ Avtomatik"
+
+    async with AsyncSessionLocal() as session:
+        user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
+        user = user_res.scalar_one()
+        new_src = Source(user_id=user.id, source_type=s_type, source_id=src_id, source_name=src_id, auto_approve=auto_approve)
+        session.add(new_src)
+        await session.commit()
     
-    if data['source_type'] == 'telegram' and tg_monitor:
+    if s_type == 'telegram' and tg_monitor:
         await tg_monitor.join_source(src_id)
-    await list_sources_msg(message, state, override_text="✅ Manba muvaffaqiyatli qo'shildi!")
+    
+    mode_text = "⚡ Avtomatik" if auto_approve else "🔍 Tasdiq bilan"
+    await list_sources_msg(message, state, override_text=f"✅ Manba qo'shildi! Rejim: <b>{mode_text}</b>")
 
 # --- 3. MAVJUD MANBANI KO'RISH ---
 @router.message(lambda m: m.text and (m.text.startswith('📺') or m.text.startswith('🐦')))
@@ -97,8 +124,6 @@ async def view_source_kb(message: types.Message, state: FSMContext):
     async with AsyncSessionLocal() as session:
         user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
         user = user_res.scalar_one()
-        
-        # MultipleResultsFound xatosini oldini olish uchun .first() ishlatamiz
         source_res = await session.execute(select(Source).where(Source.user_id == user.id, Source.source_id == source_id_text))
         source = source_res.scalars().first()
         
@@ -107,6 +132,7 @@ async def view_source_kb(message: types.Message, state: FSMContext):
         await state.set_state(SourceStates.viewing_source)
         links_res = await session.execute(select(SourceChannelLink).where(SourceChannelLink.source_id == source.id))
         links = links_res.scalars().all()
+        auto_approve = source.auto_approve
 
     builder = ReplyKeyboardBuilder()
     for link in links:
@@ -117,12 +143,52 @@ async def view_source_kb(message: types.Message, state: FSMContext):
         builder.row(types.KeyboardButton(text=f"🔗 {ch_label} (Sozlash)"))
     
     s_icon = '📺' if source.source_type == 'telegram' else '🐦'
+    mode_icon = "⚡ Avtomatik" if auto_approve else "🔍 Tasdiq bilan"
+    
     builder.row(types.KeyboardButton(text=f"➕ {get_text('btn_link_channel', lang)}"))
+    builder.row(types.KeyboardButton(text=f"🔄 Rejimni o'zgartirish"))
     builder.row(types.KeyboardButton(text=f"🗑 Manbani o'chirish: {s_icon} {source.source_id}"))
     builder.row(types.KeyboardButton(text="⬅️ Orqaga"))
-    await message.answer(f"{s_icon} <b>Manba: {source.source_id}</b>\n\nQaysi kanalni manbadan uzmoqchisiz?", reply_markup=builder.as_markup(resize_keyboard=True), parse_mode="HTML")
+    
+    await message.answer(
+        f"{s_icon} <b>Manba: {source.source_id}</b>\n"
+        f"📬 Yuborish rejimi: <b>{mode_icon}</b>\n\n"
+        f"Qaysi kanalni manbadan uzmoqchisiz?",
+        reply_markup=builder.as_markup(resize_keyboard=True),
+        parse_mode="HTML"
+    )
 
-# --- 4. UZISH (CONFIRMATION) ---
+# --- 4. REJIMNI O'ZGARTIRISH ---
+@router.message(SourceStates.viewing_source, F.text == "🔄 Rejimni o'zgartirish")
+async def change_approve_mode(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    sid = data.get('current_view_source_id')
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(select(Source).where(Source.id == sid))
+        source = res.scalar_one_or_none()
+        if not source: return
+        
+        # Rejimni almashtirish
+        new_mode = not source.auto_approve
+        await session.execute(update(Source).where(Source.id == sid).values(auto_approve=new_mode))
+        await session.commit()
+        
+        mode_text = "⚡ Avtomatik (to'g'ridan-to'g'ri kanalga)" if new_mode else "🔍 Tasdiq bilan (admin tasdiqlaydi)"
+        source_id_text = source.source_id
+
+    await message.answer(
+        f"✅ Rejim o'zgartirildi!\n\n"
+        f"<b>{source_id_text}</b> uchun yangi rejim:\n{mode_text}",
+        parse_mode="HTML"
+    )
+    # Manba ko'rish sahifasini yangilaymiz
+    # source_id_text ni qaytadan ko'rsatish uchun view_source_kb ni chaqiramiz
+    s_icon = '📺' if source.source_type == 'telegram' else '🐦'
+    fake_text = f"{s_icon} {source_id_text}"
+    message.text = fake_text
+    await view_source_kb(message, state)
+
+# --- 5. UZISH (CONFIRMATION) ---
 @router.message(SourceStates.viewing_source, F.text.startswith("🔗 "))
 async def unlink_channel_start(message: types.Message, state: FSMContext):
     ch_label = message.text.replace("🔗 ", "").replace("(Sozlash)", "").strip()
@@ -148,7 +214,7 @@ async def unlink_channel_confirm(message: types.Message, state: FSMContext):
             await message.answer("✅ Kanal manbadan muvaffaqiyatli uzildi!")
     await list_sources_msg(message, state)
 
-# --- 5. QOLGAN HAMMA NARSA ---
+# --- 6. KANAL ULASH ---
 @router.message(F.text.contains("Kanalni ulash") | F.text.contains("Привязать kanal") | F.text.contains("Link Channel"))
 async def wizard_link_start(message: types.Message, state: FSMContext):
     lang = await get_user_lang(message.from_user.id)
@@ -180,43 +246,33 @@ async def finalize_link(message: types.Message, state: FSMContext):
             session.add(new_link); await session.commit()
             await list_sources_msg(message, state, override_text="✅ Kanal muvaffaqiyatli bog'landi!")
 
+# --- 7. MANBA O'CHIRISH ---
 @router.message(F.text.startswith('🗑 Manbani o\'chirish'))
 async def del_src_start(message: types.Message):
-    # '🗑 Manbani o'chirish: 📺 @source' yoki '🗑 Manbani o'chirish: 🐦 source'
     parts = message.text.split(":")
     if len(parts) < 2: return
-    content = parts[-1].strip() # '📺 @source'
+    content = parts[-1].strip()
     
     s_type = 'telegram' if '📺' in content else ('twitter' if '🐦' in content else None)
-    # '@' belgisini olib tashlaymiz va kichik harfga o'tkazamiz
     sid_text_clean = content.replace('📺', '').replace('🐦', '').replace('@', '').strip().lower()
     
     async with AsyncSessionLocal() as session:
         user_res = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
         user = user_res.scalar_one()
-        
-        # Barcha manbalarni olamiz
         sources_res = await session.execute(select(Source).where(Source.user_id == user.id))
         all_sources = sources_res.scalars().all()
         
         source = None
         for s in all_sources:
             s_id_db_clean = s.source_id.replace('@', '').strip().lower()
-            
-            # Agar tur aniq bo'lsa (yangi tugma), turini ham tekshiramiz
-            if s_type and s.source_type != s_type:
-                continue
-            
-            # Toza nomlarni solishtiramiz
+            if s_type and s.source_type != s_type: continue
             if s_id_db_clean == sid_text_clean:
-                source = s
-                break
+                source = s; break
         
         if source:
-            s_display_type = source.source_type
             builder = InlineKeyboardBuilder()
             builder.row(types.InlineKeyboardButton(text="✅ Ha, o'chirilsin", callback_data=f"delete_source_{source.id}"))
-            await message.answer(f"⚠️ <b>{source.source_id}</b> ({s_display_type}) manbasini o'chirasizmi?", reply_markup=builder.as_markup(), parse_mode="HTML")
+            await message.answer(f"⚠️ <b>{source.source_id}</b> ({source.source_type}) manbasini o'chirasizmi?", reply_markup=builder.as_markup(), parse_mode="HTML")
         else:
             await message.answer("❌ Manba topilmadi. Iltimos, ro'yxatni yangilang (Orqaga qaytib kiring).")
 
@@ -225,7 +281,6 @@ async def del_src_final(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer("⏳ O'chirilmoqda...")
     sid = int(callback.data.split("_")[-1])
     async with AsyncSessionLocal() as session:
-        # Ob'ektni olamiz va session orqali o'chiramiz (bu cascade o'chirishni ishga tushiradi)
         res = await session.execute(select(Source).where(Source.id == sid))
         source = res.scalar_one_or_none()
         if source:

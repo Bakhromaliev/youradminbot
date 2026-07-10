@@ -21,6 +21,16 @@ async def migrate():
             if "sqlite" not in DATABASE_URL.lower():
                 await session.execute(text("ALTER TABLE bot_pending_posts ALTER COLUMN link_id DROP NOT NULL;"))
             
+            # 3. bot_sources jadvaliga auto_approve ustunini qo'shish
+            print("Adding auto_approve column to bot_sources...")
+            if "postgresql" in DATABASE_URL.lower() or "postgres" in DATABASE_URL.lower():
+                await session.execute(text("ALTER TABLE bot_sources ADD COLUMN IF NOT EXISTS auto_approve BOOLEAN DEFAULT FALSE;"))
+            else:
+                # SQLite uchun
+                try:
+                    await session.execute(text("ALTER TABLE bot_sources ADD COLUMN auto_approve BOOLEAN DEFAULT 0;"))
+                except Exception: pass  # Ustun allaqachon mavjud bo'lsa, o'tkazib yuboramiz
+            
             # 3. ON DELETE CASCADE bog'liqliklarini to'g'irlash (Faqat PostgreSQL uchun)
             if "postgresql" in DATABASE_URL.lower() or "postgres" in DATABASE_URL.lower():
                 print("Updating Foreign Key constraints for CASCADE DELETE (PostgreSQL)...")
